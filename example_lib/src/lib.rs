@@ -42,6 +42,7 @@ pub unsafe extern "C" fn __cxa_thread_atexit_impl(
 pub fn main(main_thread_id: i64) {
     MAIN_THREAD_ID.store(main_thread_id, Ordering::SeqCst);
 
+    // this thread local will be deallocated by custom impl (see dtors module)
     INSTANCE.with_borrow_mut(|content| {
         dbg!(content.is_some()); // checking if dylib was unloaded
         content.replace(alloc_a_lot_of_memory());
@@ -51,6 +52,7 @@ pub fn main(main_thread_id: i64) {
         thread_local! {
             static INSTANCE: RefCell<Option<String>> = Default::default();
         }
+        // this thread local will be deallocated by original __cxa_thread_atexit_impl (see above main thread check in custom impl)
         INSTANCE.with_borrow_mut(|content| {
             content.replace(alloc_a_lot_of_memory());
         });
