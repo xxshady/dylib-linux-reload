@@ -6,10 +6,6 @@ use std::{
 
 mod dtors;
 
-thread_local! {
-    static INSTANCE: RefCell<Option<String>> = Default::default();
-}
-
 static MAIN_THREAD_ID: AtomicI64 = AtomicI64::new(0);
 
 #[unsafe(no_mangle)]
@@ -20,6 +16,9 @@ pub unsafe extern "C" fn __cxa_thread_atexit_impl(
 ) {
     // if we are not in main thread use original __cxa_thread_atexit_impl
     if MAIN_THREAD_ID.load(Ordering::SeqCst) != libc::syscall(libc::SYS_gettid) {
+        // from fasterthanlime article 
+        // https://fasterthanli.me/articles/so-you-want-to-live-reload-rust
+
         type NextFn = unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void);
         let original_impl: NextFn = std::mem::transmute(libc::dlsym(
             libc::RTLD_NEXT,
@@ -30,6 +29,9 @@ pub unsafe extern "C" fn __cxa_thread_atexit_impl(
 
         original_impl(dtor, obj, dso_symbol);
     } else {
+        // from std (kind of) https://github.com/rust-lang/rust/blob/f6e511eec7342f59a25f7c0534f1dbea00d01b14/library/std/src/sys/thread_local/destructors/linux_like.rs#L53
+        
+        // not sure about this transmute (only the opposite direction is in std code so I thought it should also be fine to transmute it in reverse)
         let dtor = std::mem::transmute::<
             unsafe extern "C" fn(*mut c_void),
             unsafe extern "C" fn(*mut u8),
@@ -38,10 +40,13 @@ pub unsafe extern "C" fn __cxa_thread_atexit_impl(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn main(main_thread_id: i64) {
     MAIN_THREAD_ID.store(main_thread_id, Ordering::SeqCst);
 
+    thread_local! {
+        static INSTANCE: RefCell<Option<String>> = Default::default();
+    }
     // this thread local will be deallocated by custom impl (see dtors module)
     INSTANCE.with_borrow_mut(|content| {
         dbg!(content.is_some()); // checking if dylib was unloaded
@@ -61,7 +66,7 @@ pub fn main(main_thread_id: i64) {
     .unwrap();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn unload() {
     unsafe {
         dtors::run();
