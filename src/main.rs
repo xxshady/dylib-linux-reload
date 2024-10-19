@@ -10,8 +10,7 @@ fn main() {
                 RTLD_LAZY | RTLD_LOCAL | 0x00008, // RTLD_DEEPBIND
             )
             .unwrap();
-            let main_fn: unsafe extern "C" fn(main_thread_id: i64) =
-                *lib.get(b"main\0").unwrap();
+            let main_fn: unsafe extern "C" fn(main_thread_id: i64) = *lib.get(b"main\0").unwrap();
             main_fn(main_thread_id);
             let unload_fn: unsafe extern "C" fn() = *lib.get(b"unload\0").unwrap();
             unload_fn();
