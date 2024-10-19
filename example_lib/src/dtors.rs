@@ -9,13 +9,13 @@ unsafe impl Sync for Destructors {}
 static DESTRUCTORS: LazyLock<Destructors> = LazyLock::new(|| Destructors(Default::default()));
 
 pub unsafe fn register(obj: *mut u8, dtor: unsafe extern "C" fn(*mut u8)) {
-    let mut dtors = DESTRUCTORS.0.try_borrow_mut().unwrap();
+    let mut dtors = DESTRUCTORS.0.borrow_mut();
     dtors.push((obj, dtor));
 }
 
 pub unsafe fn run() {
     loop {
-        let mut dtors = DESTRUCTORS.0.try_borrow_mut().unwrap();
+        let mut dtors = DESTRUCTORS.0.borrow_mut();
         match dtors.pop() {
             Some((obj, dtor)) => {
                 drop(dtors);
