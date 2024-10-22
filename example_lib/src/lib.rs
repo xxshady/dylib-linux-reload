@@ -1,9 +1,14 @@
 use std::{
     cell::RefCell,
     ffi::c_void,
-    sync::atomic::{AtomicI64, Ordering},
+    sync::atomic::{AtomicI64, AtomicU64, Ordering},
+    thread::ThreadId,
 };
 
+include!("../../shared/lib.rs");
+use shared::Allocation;
+
+mod custom_alloc;
 mod dtors;
 
 static MAIN_THREAD_ID: AtomicI64 = AtomicI64::new(0);
@@ -44,39 +49,198 @@ pub unsafe extern "C" fn __cxa_thread_atexit_impl(
     }
 }
 
+use custom_alloc::CustomAlloc;
+use std::alloc::{Layout, System};
+
+#[global_allocator]
+static GLOBAL: CustomAlloc = CustomAlloc::new();
+
+// SAFETY: all these statics will be initialized on main thread when
+// this dynamic library is loaded and then never change
+
 #[unsafe(no_mangle)]
-pub fn main(main_thread_id: i64) {
-    MAIN_THREAD_ID.store(main_thread_id, Ordering::SeqCst);
+pub static mut ON_ALLOC: unsafe extern "C" fn(*mut u8, Layout) = on_alloc_dealloc_placeholder;
 
-    thread_local! {
-        static INSTANCE: RefCell<Option<String>> = Default::default();
-    }
-    // this thread local will be deallocated by custom impl (see dtors module)
-    INSTANCE.with_borrow_mut(|content| {
-        dbg!(content.is_some()); // checking if dynamic library was unloaded
-        content.replace(alloc_a_lot_of_memory());
-    });
+#[unsafe(no_mangle)]
+pub static mut ON_DEALLOC: unsafe extern "C" fn(*mut u8, Layout) = on_alloc_dealloc_placeholder;
 
-    std::thread::spawn(|| {
-        thread_local! {
-            static INSTANCE: RefCell<Option<String>> = Default::default();
-        }
-        // this thread local will be deallocated by original __cxa_thread_atexit_impl (see above main thread check in custom impl)
-        INSTANCE.with_borrow_mut(|content| {
-            content.replace(alloc_a_lot_of_memory());
-        });
-    })
-    .join()
-    .unwrap();
+#[unsafe(no_mangle)]
+pub static mut ON_ALLOC_ZEROED: unsafe extern "C" fn(*mut u8, Layout) =
+    on_alloc_dealloc_placeholder;
+
+#[unsafe(no_mangle)]
+pub static mut ON_REALLOC: unsafe extern "C" fn(*mut u8, *mut u8, Layout, usize) =
+    on_realloc_placeholder;
+
+// SAFETY: only mutated once and will be read from main thread
+// (it's also used to check if library was unloaded before calling main function)
+#[unsafe(no_mangle)]
+pub static mut EXIT_DEALLOCATION: bool = false;
+
+unsafe extern "C" fn on_alloc_dealloc_placeholder(_: *mut u8, _: Layout) {
+    unreachable!()
+}
+
+unsafe extern "C" fn on_realloc_placeholder(_: *mut u8, _: *mut u8, _: Layout, _: usize) {
+    unreachable!()
 }
 
 #[unsafe(no_mangle)]
-pub fn unload() {
+pub unsafe extern "C" fn main(main_thread_id: i64, print: unsafe extern "C" fn(&str)) {
+    MAIN_THREAD_ID.store(main_thread_id, Ordering::SeqCst);
+
+    static mut PRINT: unsafe extern "C" fn(&str) = print_placeholder;
+
+    assert!(PRINT == print_placeholder);
+
+    PRINT = print;
+
+    unsafe extern "C" fn print_placeholder(_: &str) {
+        unreachable!();
+    }
+
+    use std::cell::Cell;
+    #[derive(Default)]
+    struct Container(Vec<u8>);
+
+    impl Drop for Container {
+        fn drop(&mut self) {
+            unsafe {
+                PRINT(&format!(
+                    "drop {:?} {:?}",
+                    MAIN_THREAD_ID.load(Ordering::SeqCst),
+                    libc::syscall(libc::SYS_gettid)
+                ));
+            }
+        }
+    }
+
+    thread_local! {
+        static V: Cell<Container> = Cell::new(Container(Vec::new()));
+    }
+
+    V.set(Container(vec![1_u8; 10]));
+
+    std::thread::spawn(|| {
+        std::thread::sleep_ms(2000);
+        // V.set(Container(vec![1_u8; 10]));
+    });
+
+    // macro_rules! generate_thread_locals {
+    //     ($( $repeat:tt )+) => {
+    //         $(
+    //             {
+    //                 thread_local! {
+    //                     static V: Cell<Container> = Cell::new(Container(Vec::new()));
+    //                 }
+
+    //                 V.set(Container(vec![1_u8; 10]));
+    //                 $repeat;
+
+    //                 std::thread::spawn(|| {
+    //                     V.set(Container(vec![1_u8; 10]));
+    //                 }).join().unwrap();
+    //             }
+    //         )+
+    //     };
+    // }
+
+    // generate_thread_locals!(
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     // 210 ^
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    //     () () () () ()
+    // );
+
+    // let reg = Region::new(&GLOBAL);
+    // std::mem::forget(vec![0_u8; 10_000_000]);
+    // let mut v = vec![1];
+    // drop(v);
+
+    // let main_thread_vec = vec![1];
+    // for _ in 1..=10 {
+    // std::thread::spawn(move || {
+    //     print("before");
+    //     std::thread::sleep_ms(200);
+    //     print("after");
+    //     // let mut v = vec![1];
+    //     // std::mem::forget(v);
+    //     drop(main_thread_vec);
+    //     print("end");
+    // });
+    // }
+
+    // static mut V: Vec<u8> = Vec::new();
+    // print("before");
+    // V.push(1);
+    // V.push(1);
+    // V.push(1);
+    // V.push(1);
+    // V.push(1);
+    // V.push(1);
+    // V.push(1);
+    // V.push(1);
+    // V.push(1);
+    // print("after");
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn run_thread_local_dtors() {
     unsafe {
         dtors::run();
     }
 }
 
-fn alloc_a_lot_of_memory() -> String {
-    "1".to_string().repeat(1_000_000)
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn exit(allocs: &[Allocation]) {
+    EXIT_DEALLOCATION = true;
+    for Allocation(ptr, layout, ..) in allocs {
+        std::alloc::dealloc(*ptr, *layout);
+    }
 }
