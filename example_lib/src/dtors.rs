@@ -1,4 +1,4 @@
-use std::{cell::RefCell, sync::LazyLock};
+use std::cell::RefCell;
 
 struct Destructors(RefCell<Vec<(*mut u8, unsafe extern "C" fn(*mut u8))>>);
 

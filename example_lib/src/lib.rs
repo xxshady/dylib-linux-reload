@@ -1,4 +1,5 @@
 use std::{
+    alloc::Layout,
     cell::RefCell,
     ffi::c_void,
     sync::atomic::{AtomicI64, AtomicU64, Ordering},
@@ -9,6 +10,8 @@ include!("../../shared/lib.rs");
 use shared::Allocation;
 
 mod custom_alloc;
+use custom_alloc::CustomAlloc;
+
 mod dtors;
 
 static MAIN_THREAD_ID: AtomicI64 = AtomicI64::new(0);
@@ -48,9 +51,6 @@ pub unsafe extern "C" fn __cxa_thread_atexit_impl(
         dtors::register(obj.cast(), dtor);
     }
 }
-
-use custom_alloc::CustomAlloc;
-use std::alloc::{Layout, System};
 
 #[global_allocator]
 static GLOBAL: CustomAlloc = CustomAlloc::new();
