@@ -10,11 +10,22 @@ fn main() {
 
             // this flag allows us to replace __cxa_thread_atexit_impl in dynamic library
             const RTLD_DEEPBIND: i32 = 0x00008;
+
+            let directory = if cfg!(debug_assertions) {
+                "debug"
+            } else {
+                "release"
+            };
+
+            let lib_path = format!("target/{directory}/libexample_lib.so");
+            println!("loading library from: {lib_path}");
+
             let lib = libloading::os::unix::Library::open(
-                Some("target/debug/libexample_lib.so"),
+                Some(lib_path),
                 RTLD_LAZY | RTLD_LOCAL | RTLD_DEEPBIND,
             )
             .unwrap();
+
             let main_fn: unsafe extern "C" fn(main_thread_id: i64) = *lib.get(b"main\0").unwrap();
             main_fn(main_thread_id);
             let unload_fn: unsafe extern "C" fn() = *lib.get(b"unload\0").unwrap();
