@@ -1,4 +1,4 @@
-use std::{cell::RefCell, sync::LazyLock};
+use std::cell::RefCell;
 
 struct Destructors(RefCell<Vec<(*mut u8, unsafe extern "C" fn(*mut u8))>>);
 
@@ -6,7 +6,7 @@ struct Destructors(RefCell<Vec<(*mut u8, unsafe extern "C" fn(*mut u8))>>);
 unsafe impl Send for Destructors {}
 unsafe impl Sync for Destructors {}
 
-static DESTRUCTORS: LazyLock<Destructors> = LazyLock::new(|| Destructors(Default::default()));
+static DESTRUCTORS: Destructors = Destructors(RefCell::new(Vec::new()));
 
 pub unsafe fn register(obj: *mut u8, dtor: unsafe extern "C" fn(*mut u8)) {
     let mut dtors = DESTRUCTORS.0.borrow_mut();
