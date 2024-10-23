@@ -99,6 +99,10 @@ pub unsafe extern "C" fn main(main_thread_id: i64, print: unsafe extern "C" fn(&
         unreachable!();
     }
 
+    std::panic::set_hook(Box::new(|_| {
+        PRINT("panic");
+    }));
+
     use std::cell::Cell;
     #[derive(Default)]
     struct Container(Vec<u8>);
@@ -122,9 +126,10 @@ pub unsafe extern "C" fn main(main_thread_id: i64, print: unsafe extern "C" fn(&
     V.set(Container(vec![1_u8; 10]));
 
     std::thread::spawn(|| {
-        std::thread::sleep_ms(2000);
+        panic!("test");
+        // std::thread::sleep_ms(2000);
         // V.set(Container(vec![1_u8; 10]));
-    });
+    }).join().unwrap();
 
     // macro_rules! generate_thread_locals {
     //     ($( $repeat:tt )+) => {

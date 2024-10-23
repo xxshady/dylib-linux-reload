@@ -1,0 +1,130 @@
+warning: unused imports: `Debug`, `Formatter`, `Result as FmtResult`, `cell::Cell`, and `thread::ThreadId`
+  --> src/main.rs:4:5
+   |
+4  |     cell::Cell,
+   |     ^^^^^^^^^^
+5  |     fmt::{Debug, Formatter, Result as FmtResult},
+   |           ^^^^^  ^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+...
+10 |     thread::ThreadId,
+   |     ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `std::ffi::c_void`
+  --> src/main.rs:13:5
+   |
+13 | use std::ffi::c_void;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated function `std::thread::sleep_ms`: replaced by `std::thread::sleep`
+  --> src/main.rs:24:22
+   |
+24 |         std::thread::sleep_ms(1000);
+   |                      ^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: unused variable: `resource_main_thread_id`
+   --> src/main.rs:124:13
+    |
+124 |         let resource_main_thread_id = std::thread::current().id();
+    |             ^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_resource_main_thread_id`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `idx`
+  --> src/main.rs:75:55
+   |
+75 |             let el = allocs.iter().enumerate().find(|(idx, allocation)| {
+   |                                                       ^^^ help: if this is intentional, prefix it with an underscore: `_idx`
+
+warning: `extern` fn uses type `Layout`, which is not FFI-safe
+  --> src/main.rs:54:61
+   |
+54 |         unsafe extern "C" fn on_alloc(ptr: *mut u8, layout: Layout) {
+   |                                                             ^^^^^^ not FFI-safe
+   |
+   = help: consider adding a `#[repr(C)]` or `#[repr(transparent)]` attribute to this struct
+   = note: this struct has unspecified layout
+   = note: `#[warn(improper_ctypes_definitions)]` on by default
+
+warning: `extern` fn uses type `Layout`, which is not FFI-safe
+  --> src/main.rs:68:63
+   |
+68 |         unsafe extern "C" fn on_dealloc(ptr: *mut u8, layout: Layout) {
+   |                                                               ^^^^^^ not FFI-safe
+   |
+   = help: consider adding a `#[repr(C)]` or `#[repr(transparent)]` attribute to this struct
+   = note: this struct has unspecified layout
+
+warning: `extern` fn uses type `Layout`, which is not FFI-safe
+  --> src/main.rs:89:68
+   |
+89 |         unsafe extern "C" fn on_alloc_zeroed(ptr: *mut u8, layout: Layout) {
+   |                                                                    ^^^^^^ not FFI-safe
+   |
+   = help: consider adding a `#[repr(C)]` or `#[repr(transparent)]` attribute to this struct
+   = note: this struct has unspecified layout
+
+warning: `extern` fn uses type `Layout`, which is not FFI-safe
+   --> src/main.rs:103:21
+    |
+103 |             layout: Layout,
+    |                     ^^^^^^ not FFI-safe
+    |
+    = help: consider adding a `#[repr(C)]` or `#[repr(transparent)]` attribute to this struct
+    = note: this struct has unspecified layout
+
+warning: `extern` fn uses type `str`, which is not FFI-safe
+   --> src/main.rs:135:13
+    |
+135 |             unsafe extern "C" fn(main_resoure_thread_id: i64, print: unsafe extern "C" fn(&str));
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not FFI-safe
+    |
+    = help: consider using `*const u8` and a length instead
+    = note: string slices have no C equivalent
+
+warning: `extern` fn uses type `str`, which is not FFI-safe
+   --> src/main.rs:135:70
+    |
+135 |             unsafe extern "C" fn(main_resoure_thread_id: i64, print: unsafe extern "C" fn(&str));
+    |                                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^ not FFI-safe
+    |
+    = help: consider using `*const u8` and a length instead
+    = note: string slices have no C equivalent
+
+warning: `extern` fn uses type `str`, which is not FFI-safe
+   --> src/main.rs:140:50
+    |
+140 |         unsafe extern "C" fn print_impl(message: &str) {
+    |                                                  ^^^^ not FFI-safe
+    |
+    = help: consider using `*const u8` and a length instead
+    = note: string slices have no C equivalent
+
+warning: `dylib-playground` (bin "dylib-playground") generated 12 warnings (run `cargo fix --bin "dylib-playground"` to apply 2 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.01s
+     Running `target/debug/dylib-playground`
+alloc 0x5630726ed2f0 ThreadId(1)
+alloc 0x5630726edd20 ThreadId(1)
+alloc 0x5630726edd70 ThreadId(1)
+alloc 0x5630726eddb0 ThreadId(1)
+alloc 0x5630726eddf0 ThreadId(1)
+alloc 0x5630726edee0 ThreadId(1)
+dylib: panic
+alloc 0x7f6820000ca0 ThreadId(2)
+alloc 0x7f6820000cc0 ThreadId(2)
+dealloc 0x7f6820000cc0
+dealloc 0x5630726eddf0
+dealloc 0x5630726edee0
+dealloc 0x5630726edd70
+dealloc 0x5630726eddb0
+alloc 0x5630726eddb0 ThreadId(1)
+realloc
+dylib: panic
+alloc 0x5630726eddf0 ThreadId(1)
+alloc 0x5630726eddb0 ThreadId(1)
+dealloc 0x7f6820000ca0
+dylib: panic
+thread caused non-unwinding panic. aborting.

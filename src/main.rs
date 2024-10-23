@@ -16,12 +16,13 @@ include!("../shared/lib.rs");
 use shared::Allocation;
 
 fn main() {
-    for _ in 1..=2 {
+    // loop {
         load_and_unload();
         println!("----------------------------");
-        // TEST
-        RESOURCE_HAS_BEEN_SHUTDOWN.store(false, Ordering::SeqCst);
-    }
+        // // TEST
+        // RESOURCE_HAS_BEEN_SHUTDOWN.store(false, Ordering::SeqCst);
+        // std::thread::sleep_ms(1000);
+    // }
 }
 
 // TODO: store existing resource *instances* (with instance ids) in *multi-threaded* structure
