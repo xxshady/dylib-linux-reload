@@ -7,7 +7,7 @@ use std::{
 };
 
 include!("../../shared/lib.rs");
-use shared::Allocation;
+use shared::{Allocation, CLayout};
 
 mod custom_alloc;
 use custom_alloc::CustomAlloc;
@@ -59,17 +59,17 @@ static GLOBAL: CustomAlloc = CustomAlloc::new();
 // this dynamic library is loaded and then never change
 
 #[unsafe(no_mangle)]
-pub static mut ON_ALLOC: unsafe extern "C" fn(*mut u8, Layout) = on_alloc_dealloc_placeholder;
+pub static mut ON_ALLOC: unsafe extern "C" fn(*mut u8, CLayout) = on_alloc_dealloc_placeholder;
 
 #[unsafe(no_mangle)]
-pub static mut ON_DEALLOC: unsafe extern "C" fn(*mut u8, Layout) = on_alloc_dealloc_placeholder;
+pub static mut ON_DEALLOC: unsafe extern "C" fn(*mut u8, CLayout) = on_alloc_dealloc_placeholder;
 
 #[unsafe(no_mangle)]
-pub static mut ON_ALLOC_ZEROED: unsafe extern "C" fn(*mut u8, Layout) =
+pub static mut ON_ALLOC_ZEROED: unsafe extern "C" fn(*mut u8, CLayout) =
     on_alloc_dealloc_placeholder;
 
 #[unsafe(no_mangle)]
-pub static mut ON_REALLOC: unsafe extern "C" fn(*mut u8, *mut u8, Layout, usize) =
+pub static mut ON_REALLOC: unsafe extern "C" fn(*mut u8, *mut u8, CLayout, usize) =
     on_realloc_placeholder;
 
 // SAFETY: only mutated once and will be read from main thread
@@ -77,27 +77,41 @@ pub static mut ON_REALLOC: unsafe extern "C" fn(*mut u8, *mut u8, Layout, usize)
 #[unsafe(no_mangle)]
 pub static mut EXIT_DEALLOCATION: bool = false;
 
-unsafe extern "C" fn on_alloc_dealloc_placeholder(_: *mut u8, _: Layout) {
+unsafe extern "C" fn on_alloc_dealloc_placeholder(_: *mut u8, _: CLayout) {
     unreachable!()
 }
 
-unsafe extern "C" fn on_realloc_placeholder(_: *mut u8, _: *mut u8, _: Layout, _: usize) {
+unsafe extern "C" fn on_realloc_placeholder(_: *mut u8, _: *mut u8, _: CLayout, _: usize) {
     unreachable!()
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn main(main_thread_id: i64, print: unsafe extern "C" fn(&str)) {
-    panic!("test");
+    // std::env::set_var("RUST_BACKTRACE", "0");
+    let res = std::panic::catch_unwind(|| {
+        struct Bomb;
+        impl Drop for Bomb {
+            fn drop(&mut self) {
+                panic!("boom");
+            }
+        }
+        let b = Bomb;
+        panic!("test");
+    });
+    if let Err(e) = res {
+        let e = e.downcast_ref::<&str>().unwrap();
+        print(&format!("catch unwind err: {e:?}"));
+    }
     // let backtrace = std::backtrace::Backtrace::force_capture();
     // std::mem::forget(backtrace);
-    // let mut vector = vec![];
+    let mut vector = vec![];
 
-    // for _ in 1..100 {
-    //     vector.push(1_u8);
-    // }
+    for _ in 1..100 {
+        vector.push(1_u8);
+    }
 
-    // vector.shrink_to_fit();
-    // std::mem::forget(vector);
+    vector.shrink_to_fit();
+    std::mem::forget(vector);
 
     // panic!("test");
 
@@ -266,6 +280,14 @@ pub unsafe extern "C" fn run_thread_local_dtors() {
 pub unsafe extern "C" fn exit(allocs: &[Allocation]) {
     EXIT_DEALLOCATION = true;
     for Allocation(ptr, layout, ..) in allocs {
-        std::alloc::dealloc(*ptr, *layout);
+        std::alloc::dealloc(
+            *ptr,
+            Layout::from_size_align(layout.size, layout.align).unwrap(),
+        );
     }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn panicking() -> bool {
+    std::thread::panicking()
 }
