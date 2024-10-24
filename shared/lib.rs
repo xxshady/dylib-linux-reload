@@ -1,6 +1,6 @@
 mod shared {
   use std::{
-    alloc::Layout, fmt::{Debug, Formatter, Result as FmtResult},
+    fmt::{Debug, Formatter, Result as FmtResult},
   };
 
   #[derive(Clone, PartialEq)]
@@ -14,5 +14,11 @@ mod shared {
       fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
           write!(f, "({:?}, {:?})", self.0, self.1.size())
       }
+  }
+
+  #[repr(C)]
+  pub struct CLayout {
+    size: usize,
+    align: usize,
   }
 }

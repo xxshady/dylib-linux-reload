@@ -87,152 +87,172 @@ unsafe extern "C" fn on_realloc_placeholder(_: *mut u8, _: *mut u8, _: Layout, _
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn main(main_thread_id: i64, print: unsafe extern "C" fn(&str)) {
-    MAIN_THREAD_ID.store(main_thread_id, Ordering::SeqCst);
+    panic!("test");
+    // let backtrace = std::backtrace::Backtrace::force_capture();
+    // std::mem::forget(backtrace);
+    // let mut vector = vec![];
 
-    static mut PRINT: unsafe extern "C" fn(&str) = print_placeholder;
-
-    assert!(PRINT == print_placeholder);
-
-    PRINT = print;
-
-    unsafe extern "C" fn print_placeholder(_: &str) {
-        unreachable!();
-    }
-
-    std::panic::set_hook(Box::new(|_| {
-        PRINT("panic");
-    }));
-
-    use std::cell::Cell;
-    #[derive(Default)]
-    struct Container(Vec<u8>);
-
-    impl Drop for Container {
-        fn drop(&mut self) {
-            unsafe {
-                PRINT(&format!(
-                    "drop {:?} {:?}",
-                    MAIN_THREAD_ID.load(Ordering::SeqCst),
-                    libc::syscall(libc::SYS_gettid)
-                ));
-            }
-        }
-    }
-
-    thread_local! {
-        static V: Cell<Container> = Cell::new(Container(Vec::new()));
-    }
-
-    V.set(Container(vec![1_u8; 10]));
-
-    std::thread::spawn(|| {
-        panic!("test");
-        // std::thread::sleep_ms(2000);
-        // V.set(Container(vec![1_u8; 10]));
-    }).join().unwrap();
-
-    // macro_rules! generate_thread_locals {
-    //     ($( $repeat:tt )+) => {
-    //         $(
-    //             {
-    //                 thread_local! {
-    //                     static V: Cell<Container> = Cell::new(Container(Vec::new()));
-    //                 }
-
-    //                 V.set(Container(vec![1_u8; 10]));
-    //                 $repeat;
-
-    //                 std::thread::spawn(|| {
-    //                     V.set(Container(vec![1_u8; 10]));
-    //                 }).join().unwrap();
-    //             }
-    //         )+
-    //     };
+    // for _ in 1..100 {
+    //     vector.push(1_u8);
     // }
 
-    // generate_thread_locals!(
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     // 210 ^
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    //     () () () () ()
-    // );
+    // vector.shrink_to_fit();
+    // std::mem::forget(vector);
 
-    // let reg = Region::new(&GLOBAL);
-    // std::mem::forget(vec![0_u8; 10_000_000]);
-    // let mut v = vec![1];
-    // drop(v);
+    // panic!("test");
 
-    // let main_thread_vec = vec![1];
-    // for _ in 1..=10 {
-    // std::thread::spawn(move || {
-    //     print("before");
-    //     std::thread::sleep_ms(200);
-    //     print("after");
-    //     // let mut v = vec![1];
-    //     // std::mem::forget(v);
-    //     drop(main_thread_vec);
-    //     print("end");
-    // });
+    // MAIN_THREAD_ID.store(main_thread_id, Ordering::SeqCst);
+
+    // static mut PRINT: unsafe extern "C" fn(&str) = print_placeholder;
+
+    // assert!(PRINT == print_placeholder);
+
+    // PRINT = print;
+
+    // unsafe extern "C" fn print_placeholder(_: &str) {
+    //     unreachable!();
     // }
 
-    // static mut V: Vec<u8> = Vec::new();
-    // print("before");
-    // V.push(1);
-    // V.push(1);
-    // V.push(1);
-    // V.push(1);
-    // V.push(1);
-    // V.push(1);
-    // V.push(1);
-    // V.push(1);
-    // V.push(1);
-    // print("after");
+    // // std::panic::set_hook(Box::new(|info| {
+    // //     // let backtrace = std::backtrace::Backtrace::capture();
+    // //     // PRINT(&format!("panic: {info:?}\n\nbacktrace: {backtrace}"));
+    // //     PRINT(&format!("panic: {info:?}"));
+    // // }));
+
+    // use std::cell::Cell;
+    // #[derive(Default)]
+    // struct Container(Vec<u8>);
+
+    // impl Drop for Container {
+    //     fn drop(&mut self) {
+    //         unsafe {
+    //             PRINT(&format!(
+    //                 "drop {:?} {:?}",
+    //                 MAIN_THREAD_ID.load(Ordering::SeqCst),
+    //                 libc::syscall(libc::SYS_gettid)
+    //             ));
+    //         }
+    //     }
+    // }
+
+    // thread_local! {
+    //     static V: Cell<Container> = Cell::new(Container(Vec::new()));
+    // }
+
+    // V.set(Container(vec![1_u8; 10]));
+
+    // std::thread::spawn(|| {
+    //     panic!("test");
+    //     // fn stack_overflow() {
+    //     //     stack_overflow();
+    //     // }
+    //     // stack_overflow();
+    //     // std::thread::sleep_ms(2000);
+    //     // V.set(Container(vec![1_u8; 10]));
+    // }).join().unwrap();
+
+    // // macro_rules! generate_thread_locals {
+    // //     ($( $repeat:tt )+) => {
+    // //         $(
+    // //             {
+    // //                 thread_local! {
+    // //                     static V: Cell<Container> = Cell::new(Container(Vec::new()));
+    // //                 }
+
+    // //                 V.set(Container(vec![1_u8; 10]));
+    // //                 $repeat;
+
+    // //                 std::thread::spawn(|| {
+    // //                     V.set(Container(vec![1_u8; 10]));
+    // //                 }).join().unwrap();
+    // //             }
+    // //         )+
+    // //     };
+    // // }
+
+    // // generate_thread_locals!(
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     // 210 ^
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // //     () () () () ()
+    // // );
+
+    // // let reg = Region::new(&GLOBAL);
+    // // std::mem::forget(vec![0_u8; 10_000_000]);
+    // // let mut v = vec![1];
+    // // drop(v);
+
+    // // let main_thread_vec = vec![1];
+    // // for _ in 1..=10 {
+    // // std::thread::spawn(move || {
+    // //     print("before");
+    // //     std::thread::sleep_ms(200);
+    // //     print("after");
+    // //     // let mut v = vec![1];
+    // //     // std::mem::forget(v);
+    // //     drop(main_thread_vec);
+    // //     print("end");
+    // // });
+    // // }
+
+    // // static mut V: Vec<u8> = Vec::new();
+    // // print("before");
+    // // V.push(1);
+    // // V.push(1);
+    // // V.push(1);
+    // // V.push(1);
+    // // V.push(1);
+    // // V.push(1);
+    // // V.push(1);
+    // // V.push(1);
+    // // V.push(1);
+    // // print("after");
 }
 
 #[unsafe(no_mangle)]

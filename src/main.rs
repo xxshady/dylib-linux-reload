@@ -1,6 +1,6 @@
 use libloading::os::unix::{RTLD_LAZY, RTLD_LOCAL};
 use std::{
-    alloc::Layout,
+    alloc::{Layout, System},
     cell::Cell,
     fmt::{Debug, Formatter, Result as FmtResult},
     sync::{
@@ -14,6 +14,10 @@ use std::ffi::c_void;
 
 include!("../shared/lib.rs");
 use shared::Allocation;
+
+// TODO: is it needed here?
+// #[global_allocator]
+// static GLOBAL: System = System;
 
 fn main() {
     // loop {
@@ -57,7 +61,10 @@ fn load_and_unload() {
             println!("alloc {ptr:?} {thread_id:?}");
             // dbg!(ptr, layout, libc::syscall(libc::SYS_gettid));
 
-            let mut allocs = ALLOCS.lock().expect("should never happen");
+            // let mut allocs = ALLOCS.lock().expect("should never happen");
+            // TEST
+            let mut allocs = ALLOCS.lock().unwrap_unchecked();
+
             allocs.push(Allocation(ptr, layout));
         }
 
@@ -103,21 +110,30 @@ fn load_and_unload() {
             layout: Layout,
             new_size: usize,
         ) {
-            println!("realloc");
+            let ptr_changed = ptr != new_ptr;
+            let thread_id = std::thread::current().id();
+            // println!("realloc {ptr:?} -> {new_ptr:?} (changed: {ptr_changed}) layout: {layout:?} new size: {new_size:?} (thread: {thread_id:?})");
+            // let backtrace = std::backtrace::Backtrace::force_capture();
+            // println!("\n\n\nbacktrace:{backtrace}\n\n\n");
             // dbg!(ptr, new_ptr, layout, new_size);
 
-            let mut allocs = ALLOCS.lock().expect("should never happen");
+            // TEST
+            // let mut allocs = ALLOCS.lock().expect("should never happen");
+            let mut allocs = ALLOCS.lock().unwrap_unchecked();
 
             let old_allocation = Allocation(ptr, layout);
             let el = allocs.iter_mut().find(|allocation| {
                 return **allocation == old_allocation;
             });
-            let Some(el) = el else {
-                panic!("did not found allocation: {ptr:?} {layout:?}")
-            };
+            // let Some(el) = el else {
+            //     panic!("did not found allocation: {ptr:?} {layout:?}")
+            // };
+            let el = el.unwrap_unchecked();
 
+            // let new_layout =
+            //     Layout::from_size_align(new_size, layout.align()).expect("should never happen");
             let new_layout =
-                Layout::from_size_align(new_size, layout.align()).expect("should never happen");
+                Layout::from_size_align(new_size, layout.align()).unwrap_unchecked();
             *el = Allocation(new_ptr, new_layout);
         }
 
@@ -135,9 +151,17 @@ fn load_and_unload() {
             unsafe extern "C" fn(main_resoure_thread_id: i64, print: unsafe extern "C" fn(&str));
 
         let main_fn: MainFn = *lib.get(b"main\0").unwrap();
-        main_fn(main_thread_id, print_impl);
+
+        let catch_undwind = std::panic::catch_unwind(|| {
+            main_fn(main_thread_id, print_impl);
+        });
+        println!("main fn catch_undwind: {catch_undwind:?}");
 
         unsafe extern "C" fn print_impl(message: &str) {
+            if message.starts_with("panic:") {
+                let backtrace = std::backtrace::Backtrace::force_capture();
+                println!("backtrace: {backtrace}");    
+            }
             println!("dylib: {message}");
         }
 
