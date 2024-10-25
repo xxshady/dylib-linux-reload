@@ -1,10 +1,9 @@
 use libloading::os::unix::{RTLD_LAZY, RTLD_LOCAL};
 use std::{
-    cell::Cell,
-    fmt::{Debug, Formatter, Result as FmtResult},
     sync::{
         atomic::{AtomicBool, Ordering},
         Mutex,
+        MutexGuard,
     },
     thread::ThreadId,
 };
@@ -19,19 +18,12 @@ use shared::{Allocation, CLayout};
 // static GLOBAL: System = System;
 
 fn main() {
-    // loop {
-    load_and_unload();
-    println!("----------------------------");
-    // // TEST
-    // RESOURCE_HAS_BEEN_SHUTDOWN.store(false, Ordering::SeqCst);
-    // std::thread::sleep_ms(1000);
-    // }
+    for _ in 1..=1000 {
+        load_and_unload();
+        println!("----------------------------");
+        // std::thread::sleep_ms(1000);
+    }
 }
-
-// TODO: store existing resource *instances* (with instance ids) in *multi-threaded* structure
-// (not thread-local, because we need to access it from memory allocator)
-// to check if they still valid
-static RESOURCE_HAS_BEEN_SHUTDOWN: AtomicBool = AtomicBool::new(false);
 
 fn load_and_unload() {
     unsafe {
@@ -40,15 +32,30 @@ fn load_and_unload() {
         // since it's an opaque object and as_u64() is unstable
         let main_thread_id = libc::syscall(libc::SYS_gettid);
 
+        let directory = if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        };
+
         // this flag allows us to replace __cxa_thread_atexit_impl in dynamic library
         const RTLD_DEEPBIND: i32 = 0x00008;
         let lib = libloading::os::unix::Library::open(
-            Some("target/debug/libexample_lib.so"),
+            Some(format!("target/{directory}/libexample_lib.so")),
             RTLD_LAZY | RTLD_LOCAL | RTLD_DEEPBIND,
         )
         .unwrap();
 
         static ALLOCS: Mutex<Vec<Allocation>> = Mutex::new(Vec::new());
+
+        fn lock_allocs() -> MutexGuard<'static, Vec<Allocation>> {
+            let Ok(allocs) = ALLOCS.lock() else {
+                eprintln!("failed to lock ALLOCS");
+                std::process::abort();
+            };
+            
+            allocs
+        }
 
         let on_alloc_static: *mut unsafe extern "C" fn(*mut u8, CLayout) =
             *lib.get(b"ON_ALLOC\0").unwrap();
@@ -57,15 +64,9 @@ fn load_and_unload() {
         unsafe extern "C" fn on_alloc(ptr: *mut u8, layout: CLayout) {
             let thread_id = std::thread::current().id();
 
-            println!("alloc {ptr:?} {thread_id:?}");
+            // println!("alloc {ptr:?} {thread_id:?}");
 
-            if ALLOCS.is_poisoned() {
-                println!("POISONED");
-                return;
-            }
-
-            let mut allocs = ALLOCS.lock().expect("should never happen");
-
+            let mut allocs = lock_allocs();
             allocs.push(Allocation(ptr, layout));
         }
 
@@ -74,79 +75,66 @@ fn load_and_unload() {
         *on_dealloc_static = on_dealloc;
 
         unsafe extern "C" fn on_dealloc(ptr: *mut u8, layout: CLayout) {
-            println!("dealloc {ptr:?}");
+            // println!("dealloc {ptr:?}");
 
-            if ALLOCS.is_poisoned() {
-                println!("POISONED");
-                return;
-            }
-
-            let mut allocs = ALLOCS.lock().expect("should never happen");
+            let mut allocs = lock_allocs();
 
             let old_allocation = Allocation(ptr, layout);
             let el = allocs.iter().enumerate().find(|(idx, allocation)| {
                 return **allocation == old_allocation;
             });
             let Some((idx, _)) = el else {
-                panic!("did not found allocation: {ptr:?} {layout:?}")
+                eprintln!("did not found allocation: {ptr:?} {layout:?}");
+                std::process::abort();
             };
 
             allocs.swap_remove(idx);
         }
 
-        let on_alloc_zeroed_static: *mut unsafe extern "C" fn(*mut u8, CLayout) =
-            *lib.get(b"ON_ALLOC_ZEROED\0").unwrap();
-        *on_alloc_zeroed_static = on_alloc_zeroed;
+        // let on_alloc_zeroed_static: *mut unsafe extern "C" fn(*mut u8, CLayout) =
+        //     *lib.get(b"ON_ALLOC_ZEROED\0").unwrap();
+        // *on_alloc_zeroed_static = on_alloc_zeroed;
 
-        unsafe extern "C" fn on_alloc_zeroed(ptr: *mut u8, layout: CLayout) {
-            println!("alloc_zeroed");
+        // unsafe extern "C" fn on_alloc_zeroed(ptr: *mut u8, layout: CLayout) {
+        //     println!("alloc_zeroed");
 
-            if ALLOCS.is_poisoned() {
-                println!("POISONED");
-                return;
-            }
+        //     let mut allocs = lock_allocs();
+        //     allocs.push(Allocation(ptr, layout));
+        // }
 
-            let mut allocs = ALLOCS.lock().expect("should never happen");
-            allocs.push(Allocation(ptr, layout));
-        }
+        // let on_realloc_static: *mut unsafe extern "C" fn(*mut u8, *mut u8, CLayout, usize) =
+        //     *lib.get(b"ON_REALLOC\0").unwrap();
+        // *on_realloc_static = on_realloc;
 
-        let on_realloc_static: *mut unsafe extern "C" fn(*mut u8, *mut u8, CLayout, usize) =
-            *lib.get(b"ON_REALLOC\0").unwrap();
-        *on_realloc_static = on_realloc;
+        // unsafe extern "C" fn on_realloc(
+        //     ptr: *mut u8,
+        //     new_ptr: *mut u8,
+        //     layout: CLayout,
+        //     new_size: usize,
+        // ) {
+        //     let ptr_changed = ptr != new_ptr;
+        //     let thread_id = std::thread::current().id();
+        //     println!("realloc {ptr:?} -> {new_ptr:?} (changed: {ptr_changed}) layout: {layout:?} new size: {new_size:?} (thread: {thread_id:?})");
+        //     // let backtrace = std::backtrace::Backtrace::force_capture();
+        //     // println!("\n\n\nbacktrace:{backtrace}\n\n\n");
 
-        unsafe extern "C" fn on_realloc(
-            ptr: *mut u8,
-            new_ptr: *mut u8,
-            layout: CLayout,
-            new_size: usize,
-        ) {
-            let ptr_changed = ptr != new_ptr;
-            let thread_id = std::thread::current().id();
-            // println!("realloc {ptr:?} -> {new_ptr:?} (changed: {ptr_changed}) layout: {layout:?} new size: {new_size:?} (thread: {thread_id:?})");
-            // let backtrace = std::backtrace::Backtrace::force_capture();
-            // println!("\n\n\nbacktrace:{backtrace}\n\n\n");
+        //     let mut allocs = lock_allocs();
 
-            if ALLOCS.is_poisoned() {
-                println!("POISONED");
-                return;
-            }
+        //     let old_allocation = Allocation(ptr, layout);
+        //     let el = allocs.iter_mut().find(|allocation| {
+        //         return **allocation == old_allocation;
+        //     });
+        //     let Some(el) = el else {
+        //         eprintln!("did not found allocation: {ptr:?} {layout:?}");
+        //         std::process::abort();
+        //     };
 
-            let mut allocs = ALLOCS.lock().expect("should never happen");
-
-            let old_allocation = Allocation(ptr, layout);
-            let el = allocs.iter_mut().find(|allocation| {
-                return **allocation == old_allocation;
-            });
-            let Some(el) = el else {
-                panic!("did not found allocation: {ptr:?} {layout:?}")
-            };
-
-            let new_layout = CLayout {
-                size: new_size,
-                align: layout.align,
-            };
-            *el = Allocation(new_ptr, new_layout);
-        }
+        //     let new_layout = CLayout {
+        //         size: new_size,
+        //         align: layout.align,
+        //     };
+        //     *el = Allocation(new_ptr, new_layout);
+        // }
 
         let resource_main_thread_id = std::thread::current().id();
 
@@ -158,23 +146,28 @@ fn load_and_unload() {
             );
         }
 
+        let print: *mut unsafe extern "C" fn(&str) = *lib.get(b"PRINT\0").unwrap();
+        *print = print_impl;
+
         type MainFn =
-            unsafe extern "C" fn(main_resoure_thread_id: i64, print: unsafe extern "C" fn(&str));
+            unsafe extern "C" fn(main_resoure_thread_id: i64);
 
         let main_fn: MainFn = *lib.get(b"main\0").unwrap();
 
         // let catch_undwind = std::panic::catch_unwind(|| {
-        main_fn(main_thread_id, print_impl);
+        main_fn(main_thread_id);
         // });
         // println!("main fn catch_undwind: {catch_undwind:?}");
 
         unsafe extern "C" fn print_impl(message: &str) {
-            if message.starts_with("panic:") {
-                let backtrace = std::backtrace::Backtrace::force_capture();
-                println!("backtrace: {backtrace}");
-            }
+            // if message.starts_with("fatal error:") {
+            //     let backtrace = std::backtrace::Backtrace::force_capture();
+            //     println!("backtrace: {backtrace}");
+            // }
             println!("dylib: {message}");
         }
+
+        println!("calling thread-local destructors");
 
         type CallThreadLocalDestructorsFn = unsafe extern "C" fn();
 
@@ -182,16 +175,18 @@ fn load_and_unload() {
             *lib.get(b"run_thread_local_dtors\0").unwrap();
         call_destructors();
 
-        RESOURCE_HAS_BEEN_SHUTDOWN.store(true, Ordering::SeqCst);
+        println!("deallocating remaining memory");
 
-        let mut allocs = ALLOCS.lock().expect("should never happen");
+        let mut allocs = lock_allocs();
 
         let exit_fn: unsafe extern "C" fn(&[Allocation]) = *lib.get(b"exit\0").unwrap();
-        exit_fn(dbg!(&allocs));
+        exit_fn(&allocs);
 
         *allocs = Vec::new();
         drop(allocs);
 
+        // TODO: add detection of detached threads (probably other stuff) which prevents library from unloading
+        // by trying to load that library again and checking static var
         // libloading crate will call dlclose in Drop implementation for us
         // (explicit drop call for clarity)
         drop(lib);

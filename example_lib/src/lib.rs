@@ -1,9 +1,9 @@
 use std::{
     alloc::Layout,
-    cell::RefCell,
     ffi::c_void,
-    sync::atomic::{AtomicI64, AtomicU64, Ordering},
-    thread::ThreadId,
+    sync::atomic::{AtomicI64, AtomicBool, Ordering},
+    backtrace::Backtrace,
+    cell::Cell,
 };
 
 include!("../../shared/lib.rs");
@@ -64,14 +64,15 @@ pub static mut ON_ALLOC: unsafe extern "C" fn(*mut u8, CLayout) = on_alloc_deall
 #[unsafe(no_mangle)]
 pub static mut ON_DEALLOC: unsafe extern "C" fn(*mut u8, CLayout) = on_alloc_dealloc_placeholder;
 
-#[unsafe(no_mangle)]
-pub static mut ON_ALLOC_ZEROED: unsafe extern "C" fn(*mut u8, CLayout) =
-    on_alloc_dealloc_placeholder;
+// #[unsafe(no_mangle)]
+// pub static mut ON_ALLOC_ZEROED: unsafe extern "C" fn(*mut u8, CLayout) =
+//     on_alloc_dealloc_placeholder;
 
-#[unsafe(no_mangle)]
-pub static mut ON_REALLOC: unsafe extern "C" fn(*mut u8, *mut u8, CLayout, usize) =
-    on_realloc_placeholder;
+// #[unsafe(no_mangle)]
+// pub static mut ON_REALLOC: unsafe extern "C" fn(*mut u8, *mut u8, CLayout, usize) =
+//     on_realloc_placeholder;
 
+// TODO: use AtomicBool
 // SAFETY: only mutated once and will be read from main thread
 // (it's also used to check if library was unloaded before calling main function)
 #[unsafe(no_mangle)]
@@ -81,37 +82,67 @@ unsafe extern "C" fn on_alloc_dealloc_placeholder(_: *mut u8, _: CLayout) {
     unreachable!()
 }
 
-unsafe extern "C" fn on_realloc_placeholder(_: *mut u8, _: *mut u8, _: CLayout, _: usize) {
-    unreachable!()
+// unsafe extern "C" fn on_realloc_placeholder(_: *mut u8, _: *mut u8, _: CLayout, _: usize) {
+//     unreachable!()
+// }
+
+// SAFETY: only mutated once from main thread
+#[unsafe(no_mangle)]
+pub static mut PRINT: unsafe extern "C" fn(&str) = print_placeholder;
+
+unsafe extern "C" fn print_placeholder(_: &str) {
+    unreachable!();
 }
 
+static CAPTURING_BACKTRACE: AtomicBool = AtomicBool::new(false);
+
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn main(main_thread_id: i64, print: unsafe extern "C" fn(&str)) {
-    // std::env::set_var("RUST_BACKTRACE", "0");
-    let res = std::panic::catch_unwind(|| {
-        struct Bomb;
-        impl Drop for Bomb {
-            fn drop(&mut self) {
-                panic!("boom");
-            }
-        }
-        let b = Bomb;
-        panic!("test");
-    });
-    if let Err(e) = res {
-        let e = e.downcast_ref::<&str>().unwrap();
-        print(&format!("catch unwind err: {e:?}"));
-    }
-    // let backtrace = std::backtrace::Backtrace::force_capture();
-    // std::mem::forget(backtrace);
-    let mut vector = vec![];
+pub unsafe extern "C" fn main(main_thread_id: i64) {
+    std::env::set_var("RUST_BACKTRACE", "1");
+    // PRINT("before init");
+    // custom_alloc::init();
+    // PRINT("after init");
+    
+    // TODO: make it more similar to default panic hook (for example, output thread name)
+    std::panic::set_hook(Box::new(|info| {
+        CAPTURING_BACKTRACE.swap(true, Ordering::SeqCst);
+        let backtrace = Backtrace::capture();
+        let panic_message = format!("panic: {info}\nbacktrace:\n{backtrace}");
+        PRINT(&panic_message);
+        drop(backtrace);
+        drop(panic_message);
+        CAPTURING_BACKTRACE.swap(false, Ordering::SeqCst);
+    }));
 
-    for _ in 1..100 {
-        vector.push(1_u8);
-    }
+    // ignoring result on purpose because panic is handled in the custom panic hook
+    // let _ = std::panic::catch_unwind(|| {
+    //     struct Bomb;
+    //     impl Drop for Bomb {
+    //         fn drop(&mut self) {
+    //             panic!("boom");
+    //         }
+    //     }
+    //     let _boom = Bomb;
+    //     panic!("test");
+    // });
 
-    vector.shrink_to_fit();
-    std::mem::forget(vector);
+    // if let Err(e) = res {
+        // let e = e.downcast_ref::<&str>().unwrap();
+        // let backtrace = if let Some(backtrace) = CURRENT_BACKTRACE.take() {
+        //     backtrace.to_string()
+        // } else {
+        //     "<no backtrace>".to_string()
+        // };
+        // PRINT(&format!("catch unwind error: {e}, backtrace:\n{backtrace}"));
+    // }
+    // let mut vector = vec![];
+
+    // for _ in 1..100 {
+    //     vector.push(1_u8);
+    // }
+
+    // vector.shrink_to_fit();
+    // std::mem::forget(vector);
 
     // panic!("test");
 
@@ -126,12 +157,6 @@ pub unsafe extern "C" fn main(main_thread_id: i64, print: unsafe extern "C" fn(&
     // unsafe extern "C" fn print_placeholder(_: &str) {
     //     unreachable!();
     // }
-
-    // // std::panic::set_hook(Box::new(|info| {
-    // //     // let backtrace = std::backtrace::Backtrace::capture();
-    // //     // PRINT(&format!("panic: {info:?}\n\nbacktrace: {backtrace}"));
-    // //     PRINT(&format!("panic: {info:?}"));
-    // // }));
 
     // use std::cell::Cell;
     // #[derive(Default)]
@@ -155,15 +180,19 @@ pub unsafe extern "C" fn main(main_thread_id: i64, print: unsafe extern "C" fn(&
 
     // V.set(Container(vec![1_u8; 10]));
 
-    // std::thread::spawn(|| {
-    //     panic!("test");
-    //     // fn stack_overflow() {
-    //     //     stack_overflow();
-    //     // }
-    //     // stack_overflow();
-    //     // std::thread::sleep_ms(2000);
-    //     // V.set(Container(vec![1_u8; 10]));
-    // }).join().unwrap();
+    for _ in 1..=100 {
+        let result = std::thread::spawn(|| {
+            panic!("test");
+            // fn stack_overflow() {
+            //     stack_overflow();
+            // }
+            // stack_overflow();
+            // std::thread::sleep_ms(2000);
+            // V.set(Container(vec![1_u8; 10]));
+        }).join();
+    
+        PRINT(&format!("thread exited with result: {result:?}"));
+    }
 
     // // macro_rules! generate_thread_locals {
     // //     ($( $repeat:tt )+) => {
@@ -285,9 +314,4 @@ pub unsafe extern "C" fn exit(allocs: &[Allocation]) {
             Layout::from_size_align(layout.size, layout.align).unwrap(),
         );
     }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn panicking() -> bool {
-    std::thread::panicking()
 }
