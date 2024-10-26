@@ -57,7 +57,6 @@ static GLOBAL: CustomAlloc = CustomAlloc::new();
 // SAFETY: all these statics will be initialized on main thread when
 // this dynamic library is loaded and then never change
 
-// TODO: is it needed?
 #[unsafe(no_mangle)]
 pub static mut ON_ALLOC: unsafe extern "C" fn(*mut u8, CLayout) = on_alloc_dealloc_placeholder;
 
@@ -65,9 +64,9 @@ pub static mut ON_ALLOC: unsafe extern "C" fn(*mut u8, CLayout) = on_alloc_deall
 pub static mut ON_DEALLOC: unsafe extern "C" fn(*mut u8, CLayout) = on_alloc_dealloc_placeholder;
 
 #[unsafe(no_mangle)]
-pub static mut BULK_ALLOCATIONS: unsafe extern "C" fn(&[AllocatorOp]) = bulk_allocations_placeholder;
+pub static mut SEND_CACHED_ALLOCS: unsafe extern "C" fn(&[AllocatorOp]) = send_cached_allocs_placeholder;
 
-unsafe extern "C" fn bulk_allocations_placeholder(_: &[AllocatorOp]) {
+unsafe extern "C" fn send_cached_allocs_placeholder(_: &[AllocatorOp]) {
     unreachable!();
 }
 
@@ -81,10 +80,6 @@ unsafe extern "C" fn on_alloc_dealloc_placeholder(_: *mut u8, _: CLayout) {
     unreachable!()
 }
 
-// unsafe extern "C" fn on_realloc_placeholder(_: *mut u8, _: *mut u8, _: CLayout, _: usize) {
-//     unreachable!()
-// }
-
 // SAFETY: only mutated once from main thread
 #[unsafe(no_mangle)]
 pub static mut PRINT: unsafe extern "C" fn(&str) = print_placeholder;
@@ -92,14 +87,6 @@ pub static mut PRINT: unsafe extern "C" fn(&str) = print_placeholder;
 unsafe extern "C" fn print_placeholder(_: &str) {
     unreachable!();
 }
-
-static CAPTURING_BACKTRACE: AtomicBool = AtomicBool::new(false);
-
-// #[unsafe(no_mangle)]
-// static mut RESERVE_FOR_BACKTRACE: unsafe extern "C" fn() = reserve_for_backtrace_placeholder;
-// unsafe extern "C" fn reserve_for_backtrace_placeholder() {
-//     unreachable!();
-// }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn main(main_thread_id: i64) {
@@ -111,9 +98,10 @@ pub unsafe extern "C" fn main(main_thread_id: i64) {
     
     // TODO: make it more similar to default panic hook (for example, output thread name)
     std::panic::set_hook(Box::new(|info| {
-        CAPTURING_BACKTRACE.swap(true, Ordering::SeqCst);
+        // CAPTURING_BACKTRACE.swap(true, Ordering::SeqCst);
 
         // TODO: check env variables? (RUST_BACKTRACE and friends)
+        // TODO: use std backtrace?
         let backtrace = backtrace::Backtrace::new();
         let panic_message = format!("panic: {info}\nbacktrace:\n{backtrace:?}");
 
@@ -124,7 +112,7 @@ pub unsafe extern "C" fn main(main_thread_id: i64) {
         drop(backtrace);
         drop(panic_message);
         // backtrace::clear_symbol_cache();
-        CAPTURING_BACKTRACE.swap(false, Ordering::SeqCst);
+        // CAPTURING_BACKTRACE.swap(false, Ordering::SeqCst);
     }));
 
     // ignoring result on purpose because panic is handled in the custom panic hook
@@ -193,22 +181,17 @@ pub unsafe extern "C" fn main(main_thread_id: i64) {
 
     // V.set(Container(vec![1_u8; 10]));
 
-    for _ in 1..=2 {
-        let result = std::thread::spawn(|| {
-            panic!("test");
-            // fn stack_overflow() {
-            //     stack_overflow();
-            // }
-            // stack_overflow();
-            // std::thread::sleep_ms(2000);
-            // V.set(Container(vec![1_u8; 10]));
-        }).join();
-    
-        PRINT(&format!("thread exited with result: {result:?}"));
-    }
+    let result = std::thread::spawn(|| {
+        panic!("test");
+        // fn stack_overflow() {
+        //     stack_overflow();
+        // }
+        // stack_overflow();
+        // std::thread::sleep_ms(2000);
+        // V.set(Container(vec![1_u8; 10]));
+    }).join();
 
-    // TODO: call it from host
-    custom_alloc::send_bulk_allocs(None);
+    PRINT(&format!("thread exited with result: {result:?}"));
 
     // // macro_rules! generate_thread_locals {
     // //     ($( $repeat:tt )+) => {
@@ -324,10 +307,16 @@ pub unsafe extern "C" fn run_thread_local_dtors() {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn exit(allocs: &[Allocation]) {
     EXIT_DEALLOCATION = true;
+
     for Allocation(ptr, layout, ..) in allocs {
         std::alloc::dealloc(
             *ptr,
             Layout::from_size_align(layout.size, layout.align).unwrap(),
         );
     }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn request_cached_allocs() {
+    custom_alloc::send_cached_allocs(None);
 }

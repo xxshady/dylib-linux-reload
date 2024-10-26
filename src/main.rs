@@ -18,7 +18,7 @@ use shared::{Allocation, CLayout, AllocatorOp};
 // static GLOBAL: System = System;
 
 fn main() {
-    for _ in 1..=10 {
+    for _ in 1..=3 {
         load_and_unload();
         println!("----------------------------");
         // std::thread::sleep_ms(1000);
@@ -88,21 +88,21 @@ fn load_and_unload() {
         }
 
         unsafe extern "C" fn on_dealloc(ptr: *mut u8, layout: CLayout) {
-            println!("dealloc {ptr:?}");
+            // println!("dealloc {ptr:?}");
 
             let mut allocs = lock_allocs();
             deallocate(&mut allocs, Allocation(ptr, layout));
         }
 
-        let bulk_allocations_static: *mut unsafe extern "C" fn(&[AllocatorOp]) =
-        *lib.get(b"BULK_ALLOCATIONS\0").unwrap();
-        *bulk_allocations_static = bulk_allocations;
+        let send_cached_allocs_static: *mut unsafe extern "C" fn(&[AllocatorOp]) =
+        *lib.get(b"SEND_CACHED_ALLOCS\0").unwrap();
+        *send_cached_allocs_static = send_cached_allocs;
 
-        unsafe extern "C" fn bulk_allocations(bulk: &[AllocatorOp]) {
-            // println!("received allocation ops: {}", bulk.len());
+        unsafe extern "C" fn send_cached_allocs(ops: &[AllocatorOp]) {
+            println!("received allocation ops: {}", ops.len());
 
             let mut allocs = lock_allocs();
-            for op in bulk {
+            for op in ops {
                 match op {
                     AllocatorOp::Alloc(allocation) => {
                         allocs.push(allocation.clone());
@@ -113,61 +113,6 @@ fn load_and_unload() {
                 }
             }
         }
-
-        // let reserve_for_backtrace_static: *mut unsafe extern "C" fn() =
-        //     *lib.get(b"RESERVE_FOR_BACKTRACE\0").unwrap();
-        // *reserve_for_backtrace_static = reserve_for_backtrace;
-
-        // unsafe extern "C" fn reserve_for_backtrace() {
-        //     println!("reserving for backtrace");
-        //     let mut allocs = lock_allocs();
-        //     allocs.reserve(100_000);
-        // }
-        
-        // let on_alloc_zeroed_static: *mut unsafe extern "C" fn(*mut u8, CLayout) =
-        //     *lib.get(b"ON_ALLOC_ZEROED\0").unwrap();
-        // *on_alloc_zeroed_static = on_alloc_zeroed;
-
-        // unsafe extern "C" fn on_alloc_zeroed(ptr: *mut u8, layout: CLayout) {
-        //     println!("alloc_zeroed");
-
-        //     let mut allocs = lock_allocs();
-        //     allocs.push(Allocation(ptr, layout));
-        // }
-
-        // let on_realloc_static: *mut unsafe extern "C" fn(*mut u8, *mut u8, CLayout, usize) =
-        //     *lib.get(b"ON_REALLOC\0").unwrap();
-        // *on_realloc_static = on_realloc;
-
-        // unsafe extern "C" fn on_realloc(
-        //     ptr: *mut u8,
-        //     new_ptr: *mut u8,
-        //     layout: CLayout,
-        //     new_size: usize,
-        // ) {
-        //     let ptr_changed = ptr != new_ptr;
-        //     let thread_id = std::thread::current().id();
-        //     println!("realloc {ptr:?} -> {new_ptr:?} (changed: {ptr_changed}) layout: {layout:?} new size: {new_size:?} (thread: {thread_id:?})");
-        //     // let backtrace = std::backtrace::Backtrace::force_capture();
-        //     // println!("\n\n\nbacktrace:{backtrace}\n\n\n");
-
-        //     let mut allocs = lock_allocs();
-
-        //     let old_allocation = Allocation(ptr, layout);
-        //     let el = allocs.iter_mut().find(|allocation| {
-        //         return **allocation == old_allocation;
-        //     });
-        //     let Some(el) = el else {
-        //         eprintln!("did not found allocation: {ptr:?} {layout:?}");
-        //         std::process::abort();
-        //     };
-
-        //     let new_layout = CLayout {
-        //         size: new_size,
-        //         align: layout.align,
-        //     };
-        //     *el = Allocation(new_ptr, new_layout);
-        // }
 
         let resource_main_thread_id = std::thread::current().id();
 
@@ -193,10 +138,10 @@ fn load_and_unload() {
         // println!("main fn catch_undwind: {catch_undwind:?}");
 
         unsafe extern "C" fn print_impl(message: &str) {
-            // if message.starts_with("fatal error:") {
-            //     let backtrace = std::backtrace::Backtrace::force_capture();
-            //     println!("backtrace: {backtrace}");
-            // }
+            if message.starts_with("fatal error:") {
+                let backtrace = std::backtrace::Backtrace::force_capture();
+                println!("backtrace: {backtrace}");
+            }
             println!("dylib: {message}");
         }
 
@@ -207,6 +152,13 @@ fn load_and_unload() {
         let call_destructors: CallThreadLocalDestructorsFn =
             *lib.get(b"run_thread_local_dtors\0").unwrap();
         call_destructors();
+
+        println!("requesting remaining alloc ops");
+
+        let request_cached_allocs: unsafe extern "C" fn() =
+            *lib.get(b"request_cached_allocs\0").unwrap();
+
+        request_cached_allocs();
 
         println!("deallocating remaining memory");
 
