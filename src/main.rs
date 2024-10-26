@@ -11,14 +11,14 @@ use std::{
 use std::ffi::c_void;
 
 include!("../shared/lib.rs");
-use shared::{Allocation, CLayout};
+use shared::{Allocation, CLayout, AllocatorOp};
 
 // TODO: is it needed here?
 // #[global_allocator]
 // static GLOBAL: System = System;
 
 fn main() {
-    for _ in 1..=1000 {
+    for _ in 1..=10 {
         load_and_unload();
         println!("----------------------------");
         // std::thread::sleep_ms(1000);
@@ -74,16 +74,12 @@ fn load_and_unload() {
             *lib.get(b"ON_DEALLOC\0").unwrap();
         *on_dealloc_static = on_dealloc;
 
-        unsafe extern "C" fn on_dealloc(ptr: *mut u8, layout: CLayout) {
-            // println!("dealloc {ptr:?}");
-
-            let mut allocs = lock_allocs();
-
-            let old_allocation = Allocation(ptr, layout);
+        fn deallocate(allocs: &mut Vec<Allocation>, old_allocation: Allocation) {
             let el = allocs.iter().enumerate().find(|(idx, allocation)| {
                 return **allocation == old_allocation;
             });
             let Some((idx, _)) = el else {
+                let Allocation(ptr, layout) = old_allocation;
                 eprintln!("did not found allocation: {ptr:?} {layout:?}");
                 std::process::abort();
             };
@@ -91,6 +87,43 @@ fn load_and_unload() {
             allocs.swap_remove(idx);
         }
 
+        unsafe extern "C" fn on_dealloc(ptr: *mut u8, layout: CLayout) {
+            println!("dealloc {ptr:?}");
+
+            let mut allocs = lock_allocs();
+            deallocate(&mut allocs, Allocation(ptr, layout));
+        }
+
+        let bulk_allocations_static: *mut unsafe extern "C" fn(&[AllocatorOp]) =
+        *lib.get(b"BULK_ALLOCATIONS\0").unwrap();
+        *bulk_allocations_static = bulk_allocations;
+
+        unsafe extern "C" fn bulk_allocations(bulk: &[AllocatorOp]) {
+            // println!("received allocation ops: {}", bulk.len());
+
+            let mut allocs = lock_allocs();
+            for op in bulk {
+                match op {
+                    AllocatorOp::Alloc(allocation) => {
+                        allocs.push(allocation.clone());
+                    }
+                    AllocatorOp::Dealloc(deallocation) => {
+                        deallocate(&mut allocs, deallocation.clone())
+                    }
+                }
+            }
+        }
+
+        // let reserve_for_backtrace_static: *mut unsafe extern "C" fn() =
+        //     *lib.get(b"RESERVE_FOR_BACKTRACE\0").unwrap();
+        // *reserve_for_backtrace_static = reserve_for_backtrace;
+
+        // unsafe extern "C" fn reserve_for_backtrace() {
+        //     println!("reserving for backtrace");
+        //     let mut allocs = lock_allocs();
+        //     allocs.reserve(100_000);
+        // }
+        
         // let on_alloc_zeroed_static: *mut unsafe extern "C" fn(*mut u8, CLayout) =
         //     *lib.get(b"ON_ALLOC_ZEROED\0").unwrap();
         // *on_alloc_zeroed_static = on_alloc_zeroed;

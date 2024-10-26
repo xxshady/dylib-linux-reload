@@ -20,4 +20,11 @@ mod shared {
         pub size: usize,
         pub align: usize,
     }
+    
+    #[repr(C)]
+    #[derive(Clone, PartialEq, Debug)]
+    pub enum AllocatorOp {
+        Alloc(Allocation),
+        Dealloc(Allocation),
+    }
 }

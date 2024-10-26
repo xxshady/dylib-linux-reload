@@ -2,12 +2,11 @@ use std::{
     alloc::Layout,
     ffi::c_void,
     sync::atomic::{AtomicI64, AtomicBool, Ordering},
-    backtrace::Backtrace,
     cell::Cell,
 };
 
 include!("../../shared/lib.rs");
-use shared::{Allocation, CLayout};
+use shared::{Allocation, CLayout, AllocatorOp};
 
 mod custom_alloc;
 use custom_alloc::CustomAlloc;
@@ -58,19 +57,19 @@ static GLOBAL: CustomAlloc = CustomAlloc::new();
 // SAFETY: all these statics will be initialized on main thread when
 // this dynamic library is loaded and then never change
 
+// TODO: is it needed?
 #[unsafe(no_mangle)]
 pub static mut ON_ALLOC: unsafe extern "C" fn(*mut u8, CLayout) = on_alloc_dealloc_placeholder;
 
 #[unsafe(no_mangle)]
 pub static mut ON_DEALLOC: unsafe extern "C" fn(*mut u8, CLayout) = on_alloc_dealloc_placeholder;
 
-// #[unsafe(no_mangle)]
-// pub static mut ON_ALLOC_ZEROED: unsafe extern "C" fn(*mut u8, CLayout) =
-//     on_alloc_dealloc_placeholder;
+#[unsafe(no_mangle)]
+pub static mut BULK_ALLOCATIONS: unsafe extern "C" fn(&[AllocatorOp]) = bulk_allocations_placeholder;
 
-// #[unsafe(no_mangle)]
-// pub static mut ON_REALLOC: unsafe extern "C" fn(*mut u8, *mut u8, CLayout, usize) =
-//     on_realloc_placeholder;
+unsafe extern "C" fn bulk_allocations_placeholder(_: &[AllocatorOp]) {
+    unreachable!();
+}
 
 // TODO: use AtomicBool
 // SAFETY: only mutated once and will be read from main thread
@@ -96,21 +95,35 @@ unsafe extern "C" fn print_placeholder(_: &str) {
 
 static CAPTURING_BACKTRACE: AtomicBool = AtomicBool::new(false);
 
+// #[unsafe(no_mangle)]
+// static mut RESERVE_FOR_BACKTRACE: unsafe extern "C" fn() = reserve_for_backtrace_placeholder;
+// unsafe extern "C" fn reserve_for_backtrace_placeholder() {
+//     unreachable!();
+// }
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn main(main_thread_id: i64) {
     std::env::set_var("RUST_BACKTRACE", "1");
+    
     // PRINT("before init");
-    // custom_alloc::init();
+    custom_alloc::init();
     // PRINT("after init");
     
     // TODO: make it more similar to default panic hook (for example, output thread name)
     std::panic::set_hook(Box::new(|info| {
         CAPTURING_BACKTRACE.swap(true, Ordering::SeqCst);
-        let backtrace = Backtrace::capture();
-        let panic_message = format!("panic: {info}\nbacktrace:\n{backtrace}");
-        PRINT(&panic_message);
+
+        // TODO: check env variables? (RUST_BACKTRACE and friends)
+        let backtrace = backtrace::Backtrace::new();
+        let panic_message = format!("panic: {info}\nbacktrace:\n{backtrace:?}");
+
+        // TEST
+        // PRINT(&panic_message);
+        std::hint::black_box(&panic_message);
+
         drop(backtrace);
         drop(panic_message);
+        // backtrace::clear_symbol_cache();
         CAPTURING_BACKTRACE.swap(false, Ordering::SeqCst);
     }));
 
@@ -180,7 +193,7 @@ pub unsafe extern "C" fn main(main_thread_id: i64) {
 
     // V.set(Container(vec![1_u8; 10]));
 
-    for _ in 1..=100 {
+    for _ in 1..=2 {
         let result = std::thread::spawn(|| {
             panic!("test");
             // fn stack_overflow() {
@@ -193,6 +206,9 @@ pub unsafe extern "C" fn main(main_thread_id: i64) {
     
         PRINT(&format!("thread exited with result: {result:?}"));
     }
+
+    // TODO: call it from host
+    custom_alloc::send_bulk_allocs(None);
 
     // // macro_rules! generate_thread_locals {
     // //     ($( $repeat:tt )+) => {

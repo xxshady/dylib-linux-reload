@@ -7,4 +7,5 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
+backtrace = "0.3.74"
 libc.workspace = true
