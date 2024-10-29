@@ -1,14 +1,15 @@
 use std::{
     alloc::Layout,
+    cell::Cell,
     ffi::c_void,
     sync::{
+        atomic::{AtomicBool, AtomicI64, Ordering},
         Arc,
-        atomic::{AtomicI64, AtomicBool, Ordering}},
-    cell::Cell,
+    },
 };
 
 include!("../../shared/lib.rs");
-use shared::{Allocation, CLayout, AllocatorOp, AllocatorPtr};
+use shared::{Allocation, AllocatorOp, AllocatorPtr, CLayout};
 
 mod custom_alloc;
 use custom_alloc::CustomAlloc;
@@ -66,7 +67,8 @@ pub static mut ON_ALLOC: unsafe extern "C" fn(*mut u8, CLayout) = on_alloc_deall
 pub static mut ON_DEALLOC: unsafe extern "C" fn(*mut u8, CLayout) = on_alloc_dealloc_placeholder;
 
 #[unsafe(no_mangle)]
-pub static mut SEND_CACHED_ALLOCS: unsafe extern "C" fn(&[AllocatorOp]) = send_cached_allocs_placeholder;
+pub static mut SEND_CACHED_ALLOCS: unsafe extern "C" fn(&[AllocatorOp]) =
+    send_cached_allocs_placeholder;
 
 unsafe extern "C" fn send_cached_allocs_placeholder(_: &[AllocatorOp]) {
     unreachable!();
@@ -92,8 +94,10 @@ unsafe extern "C" fn print_placeholder(_: &str) {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn main(main_thread_id: i64) {
+    MAIN_THREAD_ID.store(main_thread_id, Ordering::SeqCst);
+
     std::env::set_var("RUST_BACKTRACE", "1");
-    
+
     // PRINT("before init");
     custom_alloc::init();
     // PRINT("after init");
@@ -140,13 +144,13 @@ pub unsafe extern "C" fn main(main_thread_id: i64) {
     // });
 
     // if let Err(e) = res {
-        // let e = e.downcast_ref::<&str>().unwrap();
-        // let backtrace = if let Some(backtrace) = CURRENT_BACKTRACE.take() {
-        //     backtrace.to_string()
-        // } else {
-        //     "<no backtrace>".to_string()
-        // };
-        // PRINT(&format!("catch unwind error: {e}, backtrace:\n{backtrace}"));
+    // let e = e.downcast_ref::<&str>().unwrap();
+    // let backtrace = if let Some(backtrace) = CURRENT_BACKTRACE.take() {
+    //     backtrace.to_string()
+    // } else {
+    //     "<no backtrace>".to_string()
+    // };
+    // PRINT(&format!("catch unwind error: {e}, backtrace:\n{backtrace}"));
     // }
     // let mut vector = vec![];
 
