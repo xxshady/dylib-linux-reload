@@ -1,19 +1,18 @@
+use libc::RTLD_DEEPBIND;
 use libloading::os::unix::{RTLD_LAZY, RTLD_LOCAL};
 use std::{
+    collections::HashMap,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Mutex,
-        MutexGuard,
-        LazyLock,
+        LazyLock, Mutex, MutexGuard,
     },
     thread::ThreadId,
-    collections::HashMap,
 };
 
 use std::ffi::c_void;
 
 include!("../shared/lib.rs");
-use shared::{Allocation, CLayout, AllocatorOp, AllocatorPtr};
+use shared::{Allocation, AllocatorOp, AllocatorPtr, CLayout};
 
 // TODO: is it needed here?
 // #[global_allocator]
@@ -40,22 +39,23 @@ fn load_and_unload() {
             "release"
         };
 
-        // this flag allows us to replace __cxa_thread_atexit_impl in dynamic library
-        const RTLD_DEEPBIND: i32 = 0x00008;
+        // RTLD_DEEPBIND allows replacing __cxa_thread_atexit_impl only for dynamic library
+        // without replacing it for the whole executable
         let lib = libloading::os::unix::Library::open(
             Some(format!("target/{directory}/libexample_lib.so")),
             RTLD_LAZY | RTLD_LOCAL | RTLD_DEEPBIND,
         )
         .unwrap();
 
-        static ALLOCS: LazyLock<Mutex<HashMap<AllocatorPtr, Allocation>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+        static ALLOCS: LazyLock<Mutex<HashMap<AllocatorPtr, Allocation>>> =
+            LazyLock::new(|| Mutex::new(HashMap::new()));
 
         fn lock_allocs() -> MutexGuard<'static, HashMap<AllocatorPtr, Allocation>> {
             let Ok(allocs) = ALLOCS.lock() else {
                 eprintln!("failed to lock ALLOCS");
                 std::process::abort();
             };
-            
+
             allocs
         }
 
@@ -88,7 +88,7 @@ fn load_and_unload() {
         }
 
         let send_cached_allocs_static: *mut unsafe extern "C" fn(&[AllocatorOp]) =
-        *lib.get(b"SEND_CACHED_ALLOCS\0").unwrap();
+            *lib.get(b"SEND_CACHED_ALLOCS\0").unwrap();
         *send_cached_allocs_static = send_cached_allocs;
 
         unsafe extern "C" fn send_cached_allocs(ops: &[AllocatorOp]) {
@@ -123,8 +123,7 @@ fn load_and_unload() {
         let print: *mut unsafe extern "C" fn(&str) = *lib.get(b"PRINT\0").unwrap();
         *print = print_impl;
 
-        type MainFn =
-            unsafe extern "C" fn(main_resoure_thread_id: i64);
+        type MainFn = unsafe extern "C" fn(main_resoure_thread_id: i64);
 
         let main_fn: MainFn = *lib.get(b"main\0").unwrap();
 
@@ -162,7 +161,10 @@ fn load_and_unload() {
         // TEST
         {
             let allocs = std::mem::take(&mut *allocs);
-            let allocs: Box<[Allocation]> = allocs.into_iter().map(|(_, allocation)| allocation).collect();
+            let allocs: Box<[Allocation]> = allocs
+                .into_iter()
+                .map(|(_, allocation)| allocation)
+                .collect();
             exit_fn(&allocs);
         }
         drop(allocs);
