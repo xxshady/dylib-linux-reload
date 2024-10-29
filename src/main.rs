@@ -3,6 +3,7 @@ use libloading::os::unix::{RTLD_LAZY, RTLD_LOCAL, Library};
 fn main() {
     load_and_unload();
     println!("----------------------------");
+    std::thread::sleep(std::time::Duration::from_millis(2000));
     load_and_unload();
 }
 
@@ -35,7 +36,7 @@ fn load_and_unload() {
         main_fn();
 
         // no difference
-        lib.close().unwrap();
-        // drop(lib);
+        // lib.close().unwrap();
+        drop(lib);
     }
 }
