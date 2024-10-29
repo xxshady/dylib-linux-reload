@@ -1,1 +1,2 @@
-seems like backtrace-rs uses statics or something that leaks memory in dynamic library
+`cargo build --all`<br>
+`cargo run`
