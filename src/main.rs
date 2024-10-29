@@ -15,7 +15,7 @@ fn load_and_unload() {
         };
 
         let lib_path = format!("target/{directory}/libexample_lib.so");
-        dbg!(&lib_path);
+        println!("path: {lib_path}");
 
         let lib = Library::open(
             Some(lib_path),
