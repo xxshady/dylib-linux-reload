@@ -1,0 +1,25 @@
+name: Repro
+
+on:
+  push:
+    branches: "*"
+
+jobs:
+  test-linux:
+    runs-on: ubuntu24
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install latest stable rust
+        run: rustup update
+          
+      - name: Rust version
+        run: |
+          rustc -V
+
+      - name: Repro
+        run: |
+          cargo build --all
+          cargo run
