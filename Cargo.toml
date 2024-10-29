@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+libc.workspace = true
 libloading = "0.8.5"
 
 [workspace]
@@ -13,3 +14,4 @@ members = [
 ]
 
 [workspace.dependencies]
+libc = "0.2.161"
