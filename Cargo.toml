@@ -5,10 +5,6 @@ edition = "2021"
 
 [dependencies]
 libloading = "0.8.5"
-libc.workspace = true
-
-# [profile.dev]
-# opt-level = 1
 
 [workspace]
 resolver = "2"
@@ -17,4 +13,3 @@ members = [
 ]
 
 [workspace.dependencies]
-libc = "0.2.161"
