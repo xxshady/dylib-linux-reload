@@ -1,16 +1,20 @@
 mod shared {
     use std::fmt::{Debug, Formatter, Result as FmtResult};
 
-    #[derive(Clone, PartialEq)]
-    pub struct Allocation(pub *mut u8, pub CLayout);
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    pub struct AllocatorPtr(pub *mut u8);
 
     // SAFETY: `*mut u8` won't be touched anywhere except in the dynamic library in the main thread for deallocation
-    unsafe impl Send for Allocation {}
-    unsafe impl Sync for Allocation {}
+    unsafe impl Send for AllocatorPtr {}
+    unsafe impl Sync for AllocatorPtr {}
+
+    #[derive(Clone, PartialEq)]
+    pub struct Allocation(pub AllocatorPtr, pub CLayout);
 
     impl Debug for Allocation {
         fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-            write!(f, "({:?}, {:?})", self.0, self.1.size)
+            let Self(AllocatorPtr(ptr), CLayout { size, .. }) = self;
+            write!(f, "({:?}, {:?})", ptr, size)
         }
     }
 

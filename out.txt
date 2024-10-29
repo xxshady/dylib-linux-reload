@@ -1,0 +1,114 @@
+warning: unused imports: `AtomicBool`, `Ordering`, and `thread::ThreadId`
+ --> src/main.rs:4:18
+  |
+4 |         atomic::{AtomicBool, Ordering},
+  |                  ^^^^^^^^^^  ^^^^^^^^
+...
+9 |     thread::ThreadId,
+  |     ^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `std::ffi::c_void`
+  --> src/main.rs:13:5
+   |
+13 | use std::ffi::c_void;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused variable: `resource_main_thread_id`
+   --> src/main.rs:115:13
+    |
+115 |         let resource_main_thread_id = std::thread::current().id();
+    |             ^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_resource_main_thread_id`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `thread_id`
+  --> src/main.rs:67:17
+   |
+67 |             let thread_id = std::thread::current().id();
+   |                 ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_thread_id`
+
+warning: unused variable: `layout`
+  --> src/main.rs:80:55
+   |
+80 |         unsafe extern "C" fn on_dealloc(ptr: *mut u8, layout: CLayout) {
+   |                                                       ^^^^^^ help: if this is intentional, prefix it with an underscore: `_layout`
+
+warning: variants `Alloc` and `Dealloc` are never constructed
+  --> src/../shared/lib.rs:31:9
+   |
+30 |     pub enum AllocatorOp {
+   |              ----------- variants in this enum
+31 |         Alloc(Allocation),
+   |         ^^^^^
+32 |         Dealloc(Allocation),
+   |         ^^^^^^^
+   |
+   = note: `AllocatorOp` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` on by default
+
+warning: `extern` fn uses type `[AllocatorOp]`, which is not FFI-safe
+  --> src/main.rs:94:54
+   |
+94 |         unsafe extern "C" fn send_cached_allocs(ops: &[AllocatorOp]) {
+   |                                                      ^^^^^^^^^^^^^^ not FFI-safe
+   |
+   = help: consider using a raw pointer instead
+   = note: slices have no C equivalent
+   = note: `#[warn(improper_ctypes_definitions)]` on by default
+
+warning: `extern` fn uses type `str`, which is not FFI-safe
+   --> src/main.rs:138:50
+    |
+138 |         unsafe extern "C" fn print_impl(message: &str) {
+    |                                                  ^^^^ not FFI-safe
+    |
+    = help: consider using `*const u8` and a length instead
+    = note: string slices have no C equivalent
+
+warning: `dylib-playground` (bin "dylib-playground") generated 8 warnings (run `cargo fix --bin "dylib-playground"` to apply 2 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.01s
+     Running `target/debug/dylib-playground`
+received cached alloc ops: 1
+[Alloc((0x559298822fb0, 8))]
+received cached alloc ops: 1
+[Alloc((0x559298822fd0, 16))]
+received cached alloc ops: 1
+[Dealloc((0x559298822fb0, 8))]
+received cached alloc ops: 1
+[Dealloc((0x559298822fd0, 16))]
+calling thread-local destructors
+requesting remaining alloc ops
+received cached alloc ops: 0
+[]
+deallocating remaining memory
+----------------------------
+received cached alloc ops: 1
+[Alloc((0x559298822fd0, 8))]
+received cached alloc ops: 1
+[Alloc((0x559298822fb0, 16))]
+received cached alloc ops: 1
+[Dealloc((0x559298822fd0, 8))]
+received cached alloc ops: 1
+[Dealloc((0x559298822fb0, 16))]
+calling thread-local destructors
+requesting remaining alloc ops
+received cached alloc ops: 0
+[]
+deallocating remaining memory
+----------------------------
+received cached alloc ops: 1
+[Alloc((0x559298822fb0, 8))]
+received cached alloc ops: 1
+[Alloc((0x559298822fd0, 16))]
+received cached alloc ops: 1
+[Dealloc((0x559298822fb0, 8))]
+received cached alloc ops: 1
+[Dealloc((0x559298822fd0, 16))]
+calling thread-local destructors
+requesting remaining alloc ops
+received cached alloc ops: 0
+[]
+deallocating remaining memory
+----------------------------

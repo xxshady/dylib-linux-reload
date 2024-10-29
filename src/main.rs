@@ -4,14 +4,16 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Mutex,
         MutexGuard,
+        LazyLock,
     },
     thread::ThreadId,
+    collections::HashMap,
 };
 
 use std::ffi::c_void;
 
 include!("../shared/lib.rs");
-use shared::{Allocation, CLayout, AllocatorOp};
+use shared::{Allocation, CLayout, AllocatorOp, AllocatorPtr};
 
 // TODO: is it needed here?
 // #[global_allocator]
@@ -46,9 +48,9 @@ fn load_and_unload() {
         )
         .unwrap();
 
-        static ALLOCS: Mutex<Vec<Allocation>> = Mutex::new(Vec::new());
+        static ALLOCS: LazyLock<Mutex<HashMap<AllocatorPtr, Allocation>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
-        fn lock_allocs() -> MutexGuard<'static, Vec<Allocation>> {
+        fn lock_allocs() -> MutexGuard<'static, HashMap<AllocatorPtr, Allocation>> {
             let Ok(allocs) = ALLOCS.lock() else {
                 eprintln!("failed to lock ALLOCS");
                 std::process::abort();
@@ -67,31 +69,22 @@ fn load_and_unload() {
             // println!("alloc {ptr:?} {thread_id:?}");
 
             let mut allocs = lock_allocs();
-            allocs.push(Allocation(ptr, layout));
+            let ptr = AllocatorPtr(ptr);
+            allocs.insert(ptr, Allocation(ptr, layout));
         }
 
         let on_dealloc_static: *mut unsafe extern "C" fn(*mut u8, CLayout) =
             *lib.get(b"ON_DEALLOC\0").unwrap();
         *on_dealloc_static = on_dealloc;
 
-        fn deallocate(allocs: &mut Vec<Allocation>, old_allocation: Allocation) {
-            let el = allocs.iter().enumerate().find(|(idx, allocation)| {
-                return **allocation == old_allocation;
-            });
-            let Some((idx, _)) = el else {
-                let Allocation(ptr, layout) = old_allocation;
-                eprintln!("did not found allocation: {ptr:?} {layout:?}");
-                std::process::abort();
-            };
-
-            allocs.swap_remove(idx);
-        }
-
         unsafe extern "C" fn on_dealloc(ptr: *mut u8, layout: CLayout) {
             // println!("dealloc {ptr:?}");
 
             let mut allocs = lock_allocs();
-            deallocate(&mut allocs, Allocation(ptr, layout));
+            allocs.remove(&AllocatorPtr(ptr)).unwrap_or_else(|| {
+                eprintln!("did not found allocation: {ptr:?}");
+                std::process::abort();
+            });
         }
 
         let send_cached_allocs_static: *mut unsafe extern "C" fn(&[AllocatorOp]) =
@@ -99,16 +92,19 @@ fn load_and_unload() {
         *send_cached_allocs_static = send_cached_allocs;
 
         unsafe extern "C" fn send_cached_allocs(ops: &[AllocatorOp]) {
-            println!("received allocation ops: {}", ops.len());
+            println!("received cached alloc ops: {}", ops.len());
+            // println!("{ops:?}");
 
             let mut allocs = lock_allocs();
             for op in ops {
                 match op {
                     AllocatorOp::Alloc(allocation) => {
-                        allocs.push(allocation.clone());
+                        let Allocation(ptr, ..) = allocation;
+                        allocs.insert(*ptr, allocation.clone());
                     }
-                    AllocatorOp::Dealloc(deallocation) => {
-                        deallocate(&mut allocs, deallocation.clone())
+                    AllocatorOp::Dealloc(Allocation(ptr, ..)) => {
+                        // doesnt matter if allocs didnt have it
+                        let _ = allocs.remove(ptr);
                     }
                 }
             }
@@ -145,8 +141,6 @@ fn load_and_unload() {
             println!("dylib: {message}");
         }
 
-        println!("calling thread-local destructors");
-
         type CallThreadLocalDestructorsFn = unsafe extern "C" fn();
 
         let call_destructors: CallThreadLocalDestructorsFn =
@@ -160,20 +154,24 @@ fn load_and_unload() {
 
         request_cached_allocs();
 
-        println!("deallocating remaining memory");
-
         let mut allocs = lock_allocs();
+        println!("deallocating remaining memory ({})", allocs.len());
 
         let exit_fn: unsafe extern "C" fn(&[Allocation]) = *lib.get(b"exit\0").unwrap();
-        exit_fn(&allocs);
 
-        *allocs = Vec::new();
+        // TEST
+        {
+            let allocs = std::mem::take(&mut *allocs);
+            let allocs: Box<[Allocation]> = allocs.into_iter().map(|(_, allocation)| allocation).collect();
+            exit_fn(&allocs);
+        }
         drop(allocs);
 
         // TODO: add detection of detached threads (probably other stuff) which prevents library from unloading
         // by trying to load that library again and checking static var
         // libloading crate will call dlclose in Drop implementation for us
         // (explicit drop call for clarity)
-        drop(lib);
+        // drop(lib);
+        lib.close().unwrap();
     }
 }

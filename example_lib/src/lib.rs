@@ -1,12 +1,14 @@
 use std::{
     alloc::Layout,
     ffi::c_void,
-    sync::atomic::{AtomicI64, AtomicBool, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicI64, AtomicBool, Ordering}},
     cell::Cell,
 };
 
 include!("../../shared/lib.rs");
-use shared::{Allocation, CLayout, AllocatorOp};
+use shared::{Allocation, CLayout, AllocatorOp, AllocatorPtr};
 
 mod custom_alloc;
 use custom_alloc::CustomAlloc;
@@ -95,7 +97,17 @@ pub unsafe extern "C" fn main(main_thread_id: i64) {
     // PRINT("before init");
     custom_alloc::init();
     // PRINT("after init");
-    
+
+    // double free test (set CACHE_SIZE to 2) --------------------
+    // let mut vec1 = vec![1_u8];
+    // let vec2 = vec![1_u16];
+    // std::mem::forget(vec2);
+    // drop(vec1);
+    // let mut vec1 = vec![1_u8];
+    // drop(vec1);
+    // return;
+    // -------------------------------------
+
     // TODO: make it more similar to default panic hook (for example, output thread name)
     std::panic::set_hook(Box::new(|info| {
         // CAPTURING_BACKTRACE.swap(true, Ordering::SeqCst);
@@ -181,17 +193,41 @@ pub unsafe extern "C" fn main(main_thread_id: i64) {
 
     // V.set(Container(vec![1_u8; 10]));
 
-    let result = std::thread::spawn(|| {
-        panic!("test");
-        // fn stack_overflow() {
-        //     stack_overflow();
-        // }
-        // stack_overflow();
-        // std::thread::sleep_ms(2000);
-        // V.set(Container(vec![1_u8; 10]));
-    }).join();
+    // let handles = std::array::from_fn::<_, 10, _>(|_| {
+    //     s.spawn(|| {
+    //         panic!("test");
+    //     })
+    // });
 
-    PRINT(&format!("thread exited with result: {result:?}"));
+    // for h in handles {
+    //     let result = h.join();
+    //     PRINT(&format!("thread exited with result: {result:?}"));
+    // }
+
+    std::thread::scope(|s| {
+        let handles = std::array::from_fn::<_, 10, _>(|_| {
+            s.spawn(|| {
+                panic!("test");
+            })
+        });
+
+        for h in handles {
+            let result = h.join();
+            PRINT(&format!("thread exited with result: {result:?}"));
+        }
+    });
+
+    // let result = std::thread::spawn(|| {
+    //     panic!("test");
+    //     // fn stack_overflow() {
+    //     //     stack_overflow();
+    //     // }
+    //     // stack_overflow();
+    //     // std::thread::sleep_ms(2000);
+    //     // V.set(Container(vec![1_u8; 10]));
+    // }).join();
+
+    // PRINT(&format!("thread exited with result: {result:?}"));
 
     // // macro_rules! generate_thread_locals {
     // //     ($( $repeat:tt )+) => {
@@ -299,16 +335,16 @@ pub unsafe extern "C" fn main(main_thread_id: i64) {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn run_thread_local_dtors() {
-    unsafe {
-        dtors::run();
-    }
+    println!("calling thread-local destructors ({})", dtors::len());
+
+    dtors::run();
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn exit(allocs: &[Allocation]) {
     EXIT_DEALLOCATION = true;
 
-    for Allocation(ptr, layout, ..) in allocs {
+    for Allocation(AllocatorPtr(ptr), layout, ..) in allocs {
         std::alloc::dealloc(
             *ptr,
             Layout::from_size_align(layout.size, layout.align).unwrap(),

@@ -8,6 +8,10 @@ unsafe impl Sync for Destructors {}
 
 static DESTRUCTORS: Destructors = Destructors(RefCell::new(Vec::new()));
 
+pub unsafe fn len() -> usize {
+    DESTRUCTORS.0.borrow().len()
+}
+
 pub unsafe fn register(obj: *mut u8, dtor: unsafe extern "C" fn(*mut u8)) {
     let mut dtors = DESTRUCTORS.0.borrow_mut();
     dtors.push((obj, dtor));

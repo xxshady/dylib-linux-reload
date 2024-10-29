@@ -1,0 +1,12 @@
+# This is a configuration file for the bacon tool
+#
+# Bacon repository: https://github.com/Canop/bacon
+# Complete help on configuration: https://dystroy.org/bacon/config/
+# You can also check bacon's own bacon.toml file
+
+default_job = "check"
+
+[jobs.check]
+command = ["cargo", "check", "--color", "always", "--all"]
+watch = ["src", "shared", "example_lib"]
+need_stdout = false
