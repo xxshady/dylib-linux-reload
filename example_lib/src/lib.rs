@@ -7,7 +7,7 @@ pub unsafe extern "C" fn main() {
 
     // prevents unloading     
     std::thread::scope(|s| {
-        std::thread::spawn(|| {}).join().unwrap();
+        s.spawn(|| {});
     });
     // works fine
     // std::thread::spawn(|| {}).join().unwrap();
