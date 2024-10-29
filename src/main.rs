@@ -168,10 +168,6 @@ fn load_and_unload() {
         drop(allocs);
 
         // TODO: add detection of detached threads (probably other stuff) which prevents library from unloading
-        // by trying to load that library again and checking static var
-        // libloading crate will call dlclose in Drop implementation for us
-        // (explicit drop call for clarity)
-        // drop(lib);
         lib.close().unwrap();
     }
 }
