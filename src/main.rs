@@ -14,12 +14,8 @@ use std::ffi::c_void;
 include!("../shared/lib.rs");
 use shared::{Allocation, AllocatorOp, AllocatorPtr, CLayout};
 
-// TODO: is it needed here?
-// #[global_allocator]
-// static GLOBAL: System = System;
-
 fn main() {
-    for _ in 1..=3 {
+    for _ in 1..=1 {
         load_and_unload();
         println!("----------------------------");
         // std::thread::sleep_ms(1000);
@@ -142,16 +138,21 @@ fn load_and_unload() {
 
         type CallThreadLocalDestructorsFn = unsafe extern "C" fn();
 
-        let call_destructors: CallThreadLocalDestructorsFn =
+        let call_thread_local_dtors: CallThreadLocalDestructorsFn =
             *lib.get(b"run_thread_local_dtors\0").unwrap();
-        call_destructors();
+        call_thread_local_dtors();
 
         println!("requesting remaining alloc ops");
 
         let request_cached_allocs: unsafe extern "C" fn() =
             *lib.get(b"request_cached_allocs\0").unwrap();
-
         request_cached_allocs();
+
+        println!("unloading custom alloc");
+
+        let unload_custom_alloc: unsafe extern "C" fn() =
+            *lib.get(b"unload_custom_alloc\0").unwrap();
+        unload_custom_alloc();
 
         let mut allocs = lock_allocs();
         println!("deallocating remaining memory ({})", allocs.len());

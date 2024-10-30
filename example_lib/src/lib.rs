@@ -113,23 +113,23 @@ pub unsafe extern "C" fn main(main_thread_id: i64) {
     // -------------------------------------
 
     // TODO: make it more similar to default panic hook (for example, output thread name)
-    std::panic::set_hook(Box::new(|info| {
-        // CAPTURING_BACKTRACE.swap(true, Ordering::SeqCst);
+    // std::panic::set_hook(Box::new(|info| {
+    //     // CAPTURING_BACKTRACE.swap(true, Ordering::SeqCst);
 
-        // TODO: check env variables? (RUST_BACKTRACE and friends)
-        // TODO: use std backtrace?
-        let backtrace = backtrace::Backtrace::new();
-        let panic_message = format!("panic: {info}\nbacktrace:\n{backtrace:?}");
+    //     // TODO: check env variables? (RUST_BACKTRACE and friends)
+    //     // TODO: use std backtrace?
+    //     let backtrace = backtrace::Backtrace::new();
+    //     let panic_message = format!("panic: {info}\nbacktrace:\n{backtrace:?}");
 
-        // TEST
-        // PRINT(&panic_message);
-        std::hint::black_box(&panic_message);
+    //     // TEST
+    //     // PRINT(&panic_message);
+    //     std::hint::black_box(&panic_message);
 
-        drop(backtrace);
-        drop(panic_message);
-        // backtrace::clear_symbol_cache();
-        // CAPTURING_BACKTRACE.swap(false, Ordering::SeqCst);
-    }));
+    //     drop(backtrace);
+    //     drop(panic_message);
+    //     // backtrace::clear_symbol_cache();
+    //     // CAPTURING_BACKTRACE.swap(false, Ordering::SeqCst);
+    // }));
 
     // ignoring result on purpose because panic is handled in the custom panic hook
     // let _ = std::panic::catch_unwind(|| {
@@ -208,18 +208,18 @@ pub unsafe extern "C" fn main(main_thread_id: i64) {
     //     PRINT(&format!("thread exited with result: {result:?}"));
     // }
 
-    std::thread::scope(|s| {
-        let handles = std::array::from_fn::<_, 10, _>(|_| {
-            s.spawn(|| {
-                panic!("test");
-            })
-        });
+    // std::thread::scope(|s| {
+    //     let handles = std::array::from_fn::<_, 10, _>(|_| {
+    //         s.spawn(|| {
+    //             panic!("test");
+    //         })
+    //     });
 
-        for h in handles {
-            let result = h.join();
-            PRINT(&format!("thread exited with result: {result:?}"));
-        }
-    });
+    //     for h in handles {
+    //         let result = h.join();
+    //         PRINT(&format!("thread exited with result: {result:?}"));
+    //     }
+    // });
 
     // let result = std::thread::spawn(|| {
     //     panic!("test");
@@ -339,7 +339,10 @@ pub unsafe extern "C" fn main(main_thread_id: i64) {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn run_thread_local_dtors() {
-    println!("calling thread-local destructors ({})", dtors::len());
+    PRINT(&format!(
+        "calling thread-local destructors ({})",
+        dtors::len()
+    ));
 
     dtors::run();
 }
@@ -359,4 +362,9 @@ pub unsafe extern "C" fn exit(allocs: &[Allocation]) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn request_cached_allocs() {
     custom_alloc::send_cached_allocs(None);
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn unload_custom_alloc() {
+    custom_alloc::unload();
 }

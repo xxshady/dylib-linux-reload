@@ -1,11 +1,14 @@
 use std::{
     alloc::{GlobalAlloc, Layout, System},
-    ops,
-    sync::{Mutex, MutexGuard, LazyLock, atomic::{AtomicIsize, AtomicUsize, AtomicBool, Ordering}},
     collections::HashMap,
+    ops,
+    sync::{
+        atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering},
+        LazyLock, Mutex, MutexGuard,
+    },
 };
 
-use crate::shared::{Allocation, CLayout, AllocatorOp, AllocatorPtr};
+use crate::shared::{Allocation, AllocatorOp, AllocatorPtr, CLayout};
 
 #[derive(Default, Debug)]
 pub struct CustomAlloc {
@@ -28,10 +31,7 @@ unsafe impl GlobalAlloc for CustomAlloc {
         };
 
         if ALLOC_INIT.load(Ordering::SeqCst) {
-            crate::ON_ALLOC(
-                ptr,
-                c_layout,
-            );
+            crate::ON_ALLOC(ptr, c_layout);
         } else {
             save_alloc_in_buffer(ptr, c_layout);
         }
@@ -41,7 +41,7 @@ unsafe impl GlobalAlloc for CustomAlloc {
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         self.inner.dealloc(ptr, layout);
-        
+
         if crate::EXIT_DEALLOCATION {
             return;
         }
@@ -51,6 +51,11 @@ unsafe impl GlobalAlloc for CustomAlloc {
             align: layout.align(),
         };
 
+        if ALLOC_UNLOAD.load(Ordering::SeqCst) {
+            crate::ON_DEALLOC(ptr, c_layout);
+            return;
+        }
+
         save_dealloc_in_buffer(ptr, c_layout);
     }
 }
@@ -58,19 +63,36 @@ unsafe impl GlobalAlloc for CustomAlloc {
 const CACHE_SIZE: usize = 20_000;
 
 type AllocsCache = HashMap<AllocatorPtr, AllocatorOp>;
+pub type AllocsCacheGuard = InitedGuard<'static, AllocsCache>;
 
-static ALLOCS_CACHE: LazyLock<Mutex<AllocsCache>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+static ALLOCS_CACHE: Mutex<Option<AllocsCache>> = Mutex::new(None);
 static ALLOC_INIT: AtomicBool = AtomicBool::new(false);
+static ALLOC_UNLOAD: AtomicBool = AtomicBool::new(false);
 
 static TRANSPORT_BUFFER: Mutex<Vec<AllocatorOp>> = Mutex::new(Vec::new());
 
-fn lock_allocs_cache() -> MutexGuard<'static, AllocsCache> {
-    ALLOCS_CACHE.lock().unwrap_or_else(|_|{
+pub struct InitedGuard<'a, T>(MutexGuard<'a, Option<T>>);
+
+impl<T> InitedGuard<'_, T> {
+    fn as_mut(&mut self) -> &mut T {
+        self.0.as_mut().unwrap_or_else(|| {
+            unsafe {
+                crate::PRINT("fatal error: InitedGuard mutex must be initialized");
+            }
+            std::process::abort();
+        })
+    }
+}
+
+fn lock_allocs_cache() -> AllocsCacheGuard {
+    let guard = ALLOCS_CACHE.lock().unwrap_or_else(|_| {
         unsafe {
             crate::PRINT("fatal error: failed to lock ALLOCS_CACHE");
         }
         std::process::abort();
-    })
+    });
+
+    InitedGuard(guard)
 }
 
 fn lock_transport_buffer() -> MutexGuard<'static, Vec<AllocatorOp>> {
@@ -82,42 +104,40 @@ fn lock_transport_buffer() -> MutexGuard<'static, Vec<AllocatorOp>> {
     })
 }
 
-fn push_to_allocs_cache(op: AllocatorOp, cache: Option<&mut AllocsCache>) {
-    let cache = if let Some(cache) = cache {
+fn push_to_allocs_cache(op: AllocatorOp, cache: Option<AllocsCacheGuard>) {
+    let mut cache_guard = if let Some(cache) = cache {
         cache
     } else {
-        &mut lock_allocs_cache()
+        lock_allocs_cache()
     };
+    let cache = cache_guard.as_mut();
 
     let ptr = match op {
-        AllocatorOp::Alloc(Allocation(ptr, ..)) => {
-            ptr
-        }
-        AllocatorOp::Dealloc(Allocation(ptr, ..)) => {
-            ptr
-        }
+        AllocatorOp::Alloc(Allocation(ptr, ..)) => ptr,
+        AllocatorOp::Dealloc(Allocation(ptr, ..)) => ptr,
     };
 
     cache.insert(ptr, op);
 
     if cache.len() == CACHE_SIZE {
-        send_cached_allocs(Some(cache));
+        send_cached_allocs(Some(cache_guard));
     }
 }
 
 fn save_alloc_in_buffer(ptr: *mut u8, layout: CLayout) {
     // unsafe { crate::PRINT("save_alloc_in_buffer"); }
 
-    push_to_allocs_cache(AllocatorOp::Alloc(Allocation(AllocatorPtr(ptr), layout)), None);
+    push_to_allocs_cache(
+        AllocatorOp::Alloc(Allocation(AllocatorPtr(ptr), layout)),
+        None,
+    );
 }
 
 fn save_dealloc_in_buffer(ptr: *mut u8, layout: CLayout) {
     // unsafe { crate::PRINT("save_dealloc_in_buffer"); }
 
-    let mut cache = &mut lock_allocs_cache();
-
     let ptr = AllocatorPtr(ptr);
-    push_to_allocs_cache(AllocatorOp::Dealloc(Allocation(ptr, layout)), Some(cache));
+    push_to_allocs_cache(AllocatorOp::Dealloc(Allocation(ptr, layout)), None);
 }
 
 fn allocation_not_found() -> ! {
@@ -128,12 +148,16 @@ fn allocation_not_found() -> ! {
     std::process::abort();
 }
 
-// TODO: get rid of ALLOC_INIT 
 pub unsafe fn init() {
     ALLOC_INIT.swap(true, Ordering::SeqCst);
 
-    let mut cache = &mut lock_allocs_cache();
-    cache.reserve(CACHE_SIZE);
+    let mut cache = ALLOCS_CACHE.try_lock().unwrap_or_else(|_| {
+        unsafe {
+            crate::PRINT("fatal error: failed to lock ALLOCS_CACHE for initialization");
+        }
+        std::process::abort();
+    });
+    cache.replace(HashMap::with_capacity(CACHE_SIZE));
 
     let mut transport = lock_transport_buffer();
     transport.reserve(CACHE_SIZE);
@@ -141,12 +165,13 @@ pub unsafe fn init() {
     ALLOC_INIT.swap(false, Ordering::SeqCst);
 }
 
-pub fn send_cached_allocs(cache: Option<&mut AllocsCache>) {
-    let cache = if let Some(cache) = cache {
+pub fn send_cached_allocs(cache: Option<AllocsCacheGuard>) {
+    let mut cache = if let Some(cache) = cache {
         cache
     } else {
-        &mut lock_allocs_cache()
+        lock_allocs_cache()
     };
+    let cache = cache.as_mut();
 
     let mut transport = lock_transport_buffer();
 
@@ -164,4 +189,23 @@ pub fn send_cached_allocs(cache: Option<&mut AllocsCache>) {
         crate::SEND_CACHED_ALLOCS(&transport);
     }
     transport.clear();
+}
+
+pub fn unload() {
+    ALLOC_UNLOAD.swap(true, Ordering::SeqCst);
+
+    let mut cache = ALLOCS_CACHE.try_lock().unwrap_or_else(|_| {
+        unsafe {
+            crate::PRINT("fatal error: failed to lock ALLOCS_CACHE for unload");
+        }
+        std::process::abort();
+    });
+    cache.take().unwrap_or_else(|| {
+        unsafe {
+            crate::PRINT("fatal error: failed to unload ALLOCS_CACHE");
+        }
+        std::process::abort();
+    });
+
+    ALLOC_UNLOAD.swap(false, Ordering::SeqCst);
 }
