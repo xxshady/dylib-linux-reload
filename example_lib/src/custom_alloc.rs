@@ -1,11 +1,14 @@
 use std::{
     alloc::{GlobalAlloc, Layout, System},
-    ops,
-    sync::{Mutex, MutexGuard, LazyLock, atomic::{AtomicIsize, AtomicUsize, AtomicBool, Ordering}},
     collections::HashMap,
+    ops,
+    sync::{
+        atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering},
+        LazyLock, Mutex, MutexGuard,
+    },
 };
 
-use crate::shared::{Allocation, CLayout, AllocatorOp, AllocatorPtr};
+use shared::{Allocation, AllocatorOp, AllocatorPtr, StableLayout};
 
 #[derive(Default, Debug)]
 pub struct CustomAlloc {
@@ -22,16 +25,13 @@ unsafe impl GlobalAlloc for CustomAlloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let ptr = self.inner.alloc(layout);
 
-        let c_layout = crate::shared::CLayout {
+        let c_layout = StableLayout {
             size: layout.size(),
             align: layout.align(),
         };
 
         if ALLOC_INIT.load(Ordering::SeqCst) {
-            crate::ON_ALLOC(
-                ptr,
-                c_layout,
-            );
+            crate::ON_ALLOC(ptr, c_layout);
         } else {
             save_alloc_in_buffer(ptr, c_layout);
         }
@@ -41,12 +41,12 @@ unsafe impl GlobalAlloc for CustomAlloc {
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         self.inner.dealloc(ptr, layout);
-        
+
         if crate::EXIT_DEALLOCATION {
             return;
         }
 
-        let c_layout = crate::shared::CLayout {
+        let c_layout = StableLayout {
             size: layout.size(),
             align: layout.align(),
         };
@@ -65,9 +65,9 @@ static ALLOC_INIT: AtomicBool = AtomicBool::new(false);
 static TRANSPORT_BUFFER: Mutex<Vec<AllocatorOp>> = Mutex::new(Vec::new());
 
 fn lock_allocs_cache() -> MutexGuard<'static, AllocsCache> {
-    ALLOCS_CACHE.lock().unwrap_or_else(|_|{
+    ALLOCS_CACHE.lock().unwrap_or_else(|_| {
         unsafe {
-            crate::PRINT("fatal error: failed to lock ALLOCS_CACHE");
+            crate::PRINT("fatal error: failed to lock ALLOCS_CACHE".into());
         }
         std::process::abort();
     })
@@ -76,7 +76,7 @@ fn lock_allocs_cache() -> MutexGuard<'static, AllocsCache> {
 fn lock_transport_buffer() -> MutexGuard<'static, Vec<AllocatorOp>> {
     TRANSPORT_BUFFER.lock().unwrap_or_else(|_| {
         unsafe {
-            crate::PRINT("fatal error: failed to lock TRANSPORT_BUFFER");
+            crate::PRINT("fatal error: failed to lock TRANSPORT_BUFFER".into());
         }
         std::process::abort();
     })
@@ -90,12 +90,8 @@ fn push_to_allocs_cache(op: AllocatorOp, cache: Option<&mut AllocsCache>) {
     };
 
     let ptr = match op {
-        AllocatorOp::Alloc(Allocation(ptr, ..)) => {
-            ptr
-        }
-        AllocatorOp::Dealloc(Allocation(ptr, ..)) => {
-            ptr
-        }
+        AllocatorOp::Alloc(Allocation(ptr, ..)) => ptr,
+        AllocatorOp::Dealloc(Allocation(ptr, ..)) => ptr,
     };
 
     cache.insert(ptr, op);
@@ -105,13 +101,16 @@ fn push_to_allocs_cache(op: AllocatorOp, cache: Option<&mut AllocsCache>) {
     }
 }
 
-fn save_alloc_in_buffer(ptr: *mut u8, layout: CLayout) {
+fn save_alloc_in_buffer(ptr: *mut u8, layout: StableLayout) {
     // unsafe { crate::PRINT("save_alloc_in_buffer"); }
 
-    push_to_allocs_cache(AllocatorOp::Alloc(Allocation(AllocatorPtr(ptr), layout)), None);
+    push_to_allocs_cache(
+        AllocatorOp::Alloc(Allocation(AllocatorPtr(ptr), layout)),
+        None,
+    );
 }
 
-fn save_dealloc_in_buffer(ptr: *mut u8, layout: CLayout) {
+fn save_dealloc_in_buffer(ptr: *mut u8, layout: StableLayout) {
     // unsafe { crate::PRINT("save_dealloc_in_buffer"); }
 
     let mut cache = &mut lock_allocs_cache();
@@ -123,12 +122,11 @@ fn save_dealloc_in_buffer(ptr: *mut u8, layout: CLayout) {
 fn allocation_not_found() -> ! {
     // TODO: improve error message but be careful about allocations!!!
     unsafe {
-        crate::PRINT("fatal error: unknown allocation");
+        crate::PRINT("fatal error: unknown allocation".into());
     }
     std::process::abort();
 }
 
-// TODO: get rid of ALLOC_INIT 
 pub unsafe fn init() {
     ALLOC_INIT.swap(true, Ordering::SeqCst);
 
@@ -161,7 +159,7 @@ pub fn send_cached_allocs(cache: Option<&mut AllocsCache>) {
 
     transport.extend(cache.drain().map(|(_, allocation)| allocation));
     unsafe {
-        crate::SEND_CACHED_ALLOCS(&transport);
+        crate::SEND_CACHED_ALLOCS((&**transport).into());
     }
     transport.clear();
 }

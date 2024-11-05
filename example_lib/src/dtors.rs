@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-struct Destructors(RefCell<Vec<(*mut u8, unsafe extern "C" fn(*mut u8))>>);
+struct Destructors(RefCell<Vec<(*mut u8, extern "C" fn(*mut u8))>>);
 
 // SAFETY: register & run will only be called from one thread
 unsafe impl Send for Destructors {}
@@ -12,7 +12,7 @@ pub unsafe fn len() -> usize {
     DESTRUCTORS.0.borrow().len()
 }
 
-pub unsafe fn register(obj: *mut u8, dtor: unsafe extern "C" fn(*mut u8)) {
+pub unsafe fn register(obj: *mut u8, dtor: extern "C" fn(*mut u8)) {
     let mut dtors = DESTRUCTORS.0.borrow_mut();
     dtors.push((obj, dtor));
 }
@@ -23,9 +23,7 @@ pub unsafe fn run() {
         match dtors.pop() {
             Some((obj, dtor)) => {
                 drop(dtors);
-                unsafe {
-                    dtor(obj);
-                }
+                dtor(obj);
             }
             None => {
                 *dtors = Vec::new();

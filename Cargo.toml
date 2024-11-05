@@ -6,6 +6,8 @@ edition = "2021"
 [dependencies]
 libloading = "0.8.5"
 libc.workspace = true
+stabby.workspace = true
+shared.path = "./shared"
 
 [profile.dev]
 opt-level = 3
@@ -13,8 +15,13 @@ opt-level = 3
 [workspace]
 resolver = "2"
 members = [
-  "example_lib"
+  "example_lib",
+  "shared"
 ]
 
 [workspace.dependencies]
 libc = "0.2.161"
+
+[workspace.dependencies.stabby]
+version = "36.1.1"
+features = ["libloading"]

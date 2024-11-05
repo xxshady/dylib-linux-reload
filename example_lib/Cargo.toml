@@ -9,3 +9,5 @@ crate-type = ["cdylib"]
 [dependencies]
 backtrace = "0.3.74"
 libc.workspace = true
+shared.path = "../shared"
+stabby.workspace = true
