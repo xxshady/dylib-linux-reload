@@ -41,14 +41,7 @@ fn load_and_unload() {
             "release"
         };
 
-        // RTLD_DEEPBIND allows replacing __cxa_thread_atexit_impl only for dynamic library
-        // without replacing it for the whole executable
-        let lib = libloading::os::unix::Library::open(
-            Some(format!("target/{directory}/libexample_lib.so")),
-            RTLD_LAZY | RTLD_LOCAL | RTLD_DEEPBIND,
-        )
-        .unwrap();
-        let lib = libloading::Library::from(lib);
+        let lib = load_lib(format!("target/{directory}/libexample_lib.so"));
 
         static ALLOCS: LazyLock<Mutex<HashMap<AllocatorPtr, Allocation>>> =
             LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -166,7 +159,26 @@ fn load_and_unload() {
         }
         drop(allocs);
 
-        // TODO: add detection of detached threads (probably other stuff) which prevents library from unloading
         lib.close().unwrap();
+
+        let lib = load_lib(format!("target/{directory}/libexample_lib.so"));
+        let exit_deallocation: *mut bool = *lib.get(b"EXIT_DEALLOCATION\0").unwrap();
+        if *exit_deallocation {
+            panic!(
+                "failed to unload library\n\
+                note: before unloading the library, make sure that all threads are joined (if any were spawned by it)"
+            );
+        }
+        drop(lib);
     }
+}
+
+unsafe fn load_lib(path: String) -> libloading::Library {
+    // RTLD_DEEPBIND allows replacing __cxa_thread_atexit_impl only for dynamic library
+    // without replacing it for the whole executable
+    const FLAGS: i32 = RTLD_LAZY | RTLD_LOCAL | RTLD_DEEPBIND;
+
+    let lib = libloading::os::unix::Library::open(Some(path), FLAGS).unwrap();
+    let lib = libloading::Library::from(lib);
+    lib
 }
