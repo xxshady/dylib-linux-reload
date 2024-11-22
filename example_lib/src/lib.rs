@@ -1,18 +1,12 @@
 use std::{
     alloc::Layout,
-    cell::Cell,
     ffi::c_void,
-    sync::{
-        atomic::{AtomicBool, AtomicI64, Ordering},
-        Arc,
-    },
+    sync::atomic::{AtomicI64, Ordering},
 };
 
 use stabby::str::Str;
 
-use shared::{
-    Allocation, AllocatorOp, AllocatorPtr, SliceAllocation, SliceAllocatorOp, StableLayout,
-};
+use shared::{Allocation, AllocatorPtr, SliceAllocation, SliceAllocatorOp, StableLayout};
 
 mod custom_alloc;
 use custom_alloc::CustomAlloc;
@@ -214,7 +208,7 @@ pub extern "C" fn main(main_thread_id: i64) {
     //     PRINT(&format!("thread exited with result: {result:?}"));
     // }
 
-    std::thread::scope(|s| {
+    std::thread::scope(|_s| {
         // s.spawn(|| {
         //     // panic!("test");
         // });

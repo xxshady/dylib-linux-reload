@@ -1,9 +1,8 @@
 use std::{
     alloc::{GlobalAlloc, Layout, System},
     collections::HashMap,
-    ops,
     sync::{
-        atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering},
+        atomic::{AtomicBool, Ordering},
         LazyLock, Mutex, MutexGuard,
     },
 };
@@ -113,24 +112,16 @@ fn save_alloc_in_buffer(ptr: *mut u8, layout: StableLayout) {
 fn save_dealloc_in_buffer(ptr: *mut u8, layout: StableLayout) {
     // unsafe { crate::PRINT("save_dealloc_in_buffer"); }
 
-    let mut cache = &mut lock_allocs_cache();
+    let cache = &mut lock_allocs_cache();
 
     let ptr = AllocatorPtr(ptr);
     push_to_allocs_cache(AllocatorOp::Dealloc(Allocation(ptr, layout)), Some(cache));
 }
 
-fn allocation_not_found() -> ! {
-    // TODO: improve error message but be careful about allocations!!!
-    unsafe {
-        crate::PRINT("fatal error: unknown allocation".into());
-    }
-    std::process::abort();
-}
-
 pub unsafe fn init() {
     ALLOC_INIT.swap(true, Ordering::SeqCst);
 
-    let mut cache = &mut lock_allocs_cache();
+    let cache = &mut lock_allocs_cache();
     cache.reserve(CACHE_SIZE);
 
     let mut transport = lock_transport_buffer();

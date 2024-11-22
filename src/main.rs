@@ -1,17 +1,11 @@
 use libc::RTLD_DEEPBIND;
 use libloading::os::unix::{RTLD_LAZY, RTLD_LOCAL};
-use stabby::{alloc::AllocationError, libloading::StabbyLibrary, slice::Slice, str::Str};
+use stabby::{libloading::StabbyLibrary, str::Str};
 use std::{
     collections::HashMap,
     io::stdin,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        LazyLock, Mutex, MutexGuard,
-    },
-    thread::ThreadId,
+    sync::{LazyLock, Mutex, MutexGuard},
 };
-
-use std::ffi::c_void;
 
 use shared::{
     Allocation, AllocatorOp, AllocatorPtr, SliceAllocation, SliceAllocatorOp, StableLayout,

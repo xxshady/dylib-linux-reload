@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
-use stabby::{slice::Slice, stabby};
+use stabby::stabby;
 
 #[stabby]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
