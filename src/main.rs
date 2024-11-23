@@ -169,7 +169,7 @@ fn load_and_unload() {
                 note: before unloading the library, make sure that all threads are joined (if any were spawned by it)"
             );
         }
-        drop(lib);
+        lib.close().unwrap();
     }
 }
 

@@ -342,6 +342,15 @@ pub extern "C" fn main(main_thread_id: i64) {
     // // V.push(1);
     // // V.push(1);
     // // print("after");
+
+    // TODO: add tests for file handles, network ports
+    // {
+    //     static mut V: Option<std::net::TcpListener> = None;
+    //     let v = std::net::TcpListener::bind("127.0.0.1:9999").unwrap();
+    //     unsafe {
+    //         V = Some(v);
+    //     }
+    // }
 }
 
 #[stabby::export]
